@@ -329,13 +329,145 @@
         .cert-warning strong {
             color: #ffb74d;
         }
+
+        /* Welcome Screen */
+        .welcome {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 80vh;
+            padding: 32px 24px;
+            text-align: center;
+        }
+
+        .welcome.hidden {
+            display: none;
+        }
+
+        .welcome-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+
+        .welcome h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .welcome .greeting {
+            font-size: 16px;
+            color: var(--text-dim);
+            margin-bottom: 32px;
+            line-height: 1.5;
+        }
+
+        .setup-steps {
+            width: 100%;
+            max-width: 340px;
+            text-align: left;
+        }
+
+        .setup-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 14px;
+            background: var(--surface);
+            border-radius: var(--radius);
+            margin-bottom: 8px;
+        }
+
+        .setup-step .step-num {
+            width: 28px;
+            height: 28px;
+            min-width: 28px;
+            background: var(--primary-dark);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 700;
+            color: white;
+        }
+
+        .setup-step .step-text {
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .setup-step .step-text strong {
+            color: var(--primary);
+        }
+
+        .welcome .start-btn {
+            margin-top: 24px;
+            padding: 14px 48px;
+            font-size: 16px;
+            border-radius: 24px;
+            background: var(--primary-dark);
+            color: white;
+            border: none;
+            font-weight: 700;
+        }
+
+        .welcome .skip-link {
+            margin-top: 12px;
+            font-size: 13px;
+            color: var(--text-dim);
+            background: none;
+            border: none;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+
+        .main-app {
+            display: none;
+        }
+
+        .main-app.visible {
+            display: block;
+        }
     </style>
 </head>
 <body>
 
+<!-- Welcome Screen -->
+<div class="welcome" id="welcomeScreen">
+    <div class="welcome-icon">&#128250;</div>
+    <h1>Hey! Welcome to Smirror</h1>
+    <div class="greeting">
+        Turn your phone into a remote for the Samsung TV.<br>
+        No apps to install — let's get you connected.
+    </div>
+
+    <div class="setup-steps">
+        <div class="setup-step">
+            <div class="step-num">1</div>
+            <div class="step-text">Make sure your <strong>phone</strong> and the <strong>TV</strong> are on the same WiFi</div>
+        </div>
+        <div class="setup-step">
+            <div class="step-num">2</div>
+            <div class="step-text">Find the TV's IP address:<br><strong>TV Settings > General > Network > Network Status</strong></div>
+        </div>
+        <div class="setup-step">
+            <div class="step-num">3</div>
+            <div class="step-text">When the TV asks to allow the connection, tap <strong>Allow</strong> on the TV</div>
+        </div>
+    </div>
+
+    <button class="start-btn" onclick="startApp()">Let's Go</button>
+    <button class="skip-link" onclick="startApp()">I've done this before, skip intro</button>
+</div>
+
+<!-- Main App (hidden until welcome is dismissed) -->
+<div class="main-app" id="mainApp">
+
 <div class="header">
     <h1>Smirror</h1>
-    <div class="subtitle">Samsung TV Screen Mirror & Remote</div>
+    <div class="subtitle">Samsung TV Remote & Cast</div>
 </div>
 
 <div class="status-bar">
@@ -512,11 +644,19 @@
 <!-- Log -->
 <div class="log" id="log"></div>
 
+</div><!-- end mainApp -->
+
 <script>
     let ws = null;
     let connected = false;
     let tvIp = '';
     let pairingToken = '';
+
+    function startApp() {
+        document.getElementById('welcomeScreen').classList.add('hidden');
+        document.getElementById('mainApp').classList.add('visible');
+        localStorage.setItem('smirror_welcomed', 'true');
+    }
 
     // Load saved settings
     const saved = localStorage.getItem('smirror');
@@ -526,6 +666,11 @@
             if (data.ip) document.getElementById('tvIp').value = data.ip;
             if (data.token) pairingToken = data.token;
         } catch(e) {}
+    }
+
+    // Skip welcome for returning users
+    if (localStorage.getItem('smirror_welcomed')) {
+        startApp();
     }
 
     function saveSettings() {
