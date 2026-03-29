@@ -2,8 +2,8 @@ from setuptools import setup, find_packages
 
 setup(
     name="smirror",
-    version="0.1.0",
-    description="Samsung TV Screen Mirror - Mirror your screen to Samsung Smart TVs",
+    version="0.2.0",
+    description="Smart TV Screen Mirror - Mirror your screen to Samsung & Philips Smart TVs",
     packages=find_packages(),
     python_requires=">=3.8",
     install_requires=[

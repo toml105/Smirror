@@ -1,7 +1,8 @@
-"""Screen capture and streaming to Samsung TV.
+"""Screen capture and streaming to Smart TVs.
 
 Captures the local screen, encodes frames as JPEG, and streams
 them to the TV via its media rendering capabilities.
+Supports both Samsung and Philips TVs.
 """
 
 import base64
@@ -11,12 +12,11 @@ import logging
 import threading
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from typing import Optional
+from typing import Optional, Union
 
 from PIL import ImageGrab, Image
 
-from .discovery import SamsungTV
-from .remote import SamsungRemote
+from .discovery import SamsungTV, PhilipsTV
 
 logger = logging.getLogger(__name__)
 
@@ -210,11 +210,13 @@ class ScreenMirrorSession:
     1. Starts local screen capture
     2. Starts an MJPEG HTTP server
     3. Opens the TV's browser to the MJPEG stream
+
+    Works with both Samsung and Philips TVs.
     """
 
     def __init__(
         self,
-        tv: SamsungTV,
+        tv: Union[SamsungTV, PhilipsTV],
         fps: int = DEFAULT_FPS,
         quality: int = DEFAULT_QUALITY,
         scale: float = DEFAULT_SCALE,
@@ -251,6 +253,27 @@ class ScreenMirrorSession:
         )
         return local_ip
 
+    def _open_on_tv(self, stream_url: str) -> bool:
+        """Open the stream URL on the TV, handling both Samsung and Philips."""
+        if isinstance(self.tv, PhilipsTV):
+            from .philips_remote import PhilipsRemote
+            remote = PhilipsRemote(self.tv.ip, port=self.tv.port)
+            if remote.connect():
+                logger.info("Opening stream on Philips TV browser...")
+                remote.open_browser(stream_url)
+                remote.disconnect()
+                return True
+            return False
+        else:
+            from .remote import SamsungRemote
+            remote = SamsungRemote(self.tv)
+            if remote.connect():
+                logger.info("Opening stream on Samsung TV browser...")
+                remote.open_browser(stream_url)
+                remote.disconnect()
+                return True
+            return False
+
     def start(self):
         """Start the screen mirror session.
 
@@ -270,11 +293,7 @@ class ScreenMirrorSession:
         stream_url = f"http://{local_ip}:{self.server_port}/"
 
         # Connect to TV and open the browser
-        remote = SamsungRemote(self.tv)
-        if remote.connect():
-            logger.info("Opening stream on TV browser...")
-            remote.open_browser(stream_url)
-            remote.disconnect()
+        if self._open_on_tv(stream_url):
             print(f"\nMirroring started!")
             print(f"  Stream URL: {stream_url}")
             print(f"  TV: {self.tv}")

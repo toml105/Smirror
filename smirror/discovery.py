@@ -1,10 +1,10 @@
-"""SSDP/UPnP discovery for Samsung Smart TVs on the local network."""
+"""SSDP/UPnP discovery for Samsung and Philips Smart TVs on the local network."""
 
 import socket
 import re
 import time
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 from xml.etree import ElementTree
 
@@ -43,6 +43,7 @@ class SamsungTV:
     model: str
     location: str
     usn: str
+    brand: str = "samsung"
 
     def __str__(self) -> str:
         return f"{self.name} ({self.model}) at {self.ip}:{self.port}"
@@ -61,6 +62,37 @@ class SamsungTV:
     def info_url(self) -> str:
         """REST API info endpoint."""
         return f"http://{self.ip}:8001/api/v2/"
+
+
+@dataclass
+class PhilipsTV:
+    """Represents a discovered Philips TV."""
+
+    ip: str
+    port: int
+    name: str
+    model: str
+    location: str
+    usn: str
+    brand: str = "philips"
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.model}) at {self.ip}:{self.port}"
+
+    @property
+    def api_url(self) -> str:
+        """JointSpace API endpoint (HTTPS)."""
+        return f"https://{self.ip}:1926/6"
+
+    @property
+    def api_url_http(self) -> str:
+        """JointSpace API endpoint (HTTP, older models)."""
+        return f"http://{self.ip}:1925/6"
+
+    @property
+    def info_url(self) -> str:
+        """System info endpoint."""
+        return f"https://{self.ip}:1926/6/system"
 
 
 def _parse_ssdp_response(data: str) -> Optional[dict]:
@@ -213,3 +245,156 @@ def find_tv_by_ip(ip: str) -> Optional[SamsungTV]:
             usn="",
         )
     return None
+
+
+def _get_philips_tv_info(ip: str) -> Optional[dict]:
+    """Try the Philips JointSpace API to get TV info."""
+    # Try HTTPS on 1926 first, then HTTP on 1925
+    for scheme, port in [("https", 1926), ("http", 1925)]:
+        try:
+            resp = requests.get(
+                f"{scheme}://{ip}:{port}/6/system",
+                timeout=3,
+                verify=False,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return {
+                "name": data.get("name", "Philips TV"),
+                "model": data.get("model", data.get("modelname", "Unknown")),
+                "ip": ip,
+                "port": port,
+                "use_ssl": scheme == "https",
+            }
+        except Exception as e:
+            logger.debug("Philips API not available on %s:%d: %s", ip, port, e)
+    return None
+
+
+def find_philips_tv_by_ip(ip: str) -> Optional[PhilipsTV]:
+    """Try to connect to a Philips TV at a known IP address."""
+    info = _get_philips_tv_info(ip)
+    if info:
+        return PhilipsTV(
+            ip=ip,
+            port=info["port"],
+            name=info["name"],
+            model=info["model"],
+            location=f"https://{ip}:{info['port']}/",
+            usn="",
+        )
+    return None
+
+
+def find_any_tv_by_ip(ip: str):
+    """Try to find any supported TV (Samsung or Philips) at a given IP.
+
+    Returns a SamsungTV, PhilipsTV, or None.
+    """
+    # Try Samsung first (faster check)
+    tv = find_tv_by_ip(ip)
+    if tv:
+        return tv
+    # Try Philips
+    tv = find_philips_tv_by_ip(ip)
+    if tv:
+        return tv
+    return None
+
+
+def discover_all_tvs(timeout: float = SSDP_TIMEOUT) -> list:
+    """Discover all supported TVs (Samsung and Philips) on the local network.
+
+    Returns a mixed list of SamsungTV and PhilipsTV objects.
+    """
+    found = {}
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.settimeout(timeout)
+
+    # Send SSDP searches for all device types
+    all_targets = SEARCH_TARGETS + [
+        "urn:schemas-upnp-org:device:Basic:1",
+        "ssdp:all",
+    ]
+
+    for st in all_targets:
+        msg = SSDP_MSEARCH.format(
+            addr=SSDP_ADDR, port=SSDP_PORT, mx=3, st=st
+        ).encode()
+        sock.sendto(msg, (SSDP_ADDR, SSDP_PORT))
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            sock.settimeout(remaining)
+            data, addr = sock.recvfrom(4096)
+            response = data.decode("utf-8", errors="replace")
+            headers = _parse_ssdp_response(response)
+            if not headers:
+                continue
+
+            ip = addr[0]
+            if ip in found:
+                continue
+
+            server = headers.get("SERVER", "")
+            usn = headers.get("USN", "")
+            location = headers.get("LOCATION", "")
+
+            # Check Samsung
+            is_samsung = "samsung" in server.lower() or "samsung" in usn.lower()
+            if location and not is_samsung:
+                desc = _fetch_device_description(location)
+                if desc and "samsung" in desc.get("manufacturer", "").lower():
+                    is_samsung = True
+
+            if is_samsung:
+                info = _get_tv_info_rest(ip)
+                if info:
+                    name = info["name"]
+                    model = info["model"]
+                else:
+                    desc = _fetch_device_description(location) if location else None
+                    name = desc.get("name", "Samsung TV") if desc else "Samsung TV"
+                    model = desc.get("model", "Unknown") if desc else "Unknown"
+
+                port_match = re.search(r":(\d+)", location)
+                port = int(port_match.group(1)) if port_match else 8001
+
+                tv = SamsungTV(
+                    ip=ip, port=port, name=name, model=model,
+                    location=location, usn=usn,
+                )
+                found[ip] = tv
+                logger.info("Discovered Samsung: %s", tv)
+                continue
+
+            # Check Philips
+            is_philips = "philips" in server.lower() or "philips" in usn.lower()
+            if location and not is_philips:
+                desc = _fetch_device_description(location)
+                if desc and "philips" in desc.get("manufacturer", "").lower():
+                    is_philips = True
+
+            if is_philips:
+                info = _get_philips_tv_info(ip)
+                if info:
+                    tv = PhilipsTV(
+                        ip=ip, port=info["port"], name=info["name"],
+                        model=info["model"], location=location, usn=usn,
+                    )
+                    found[ip] = tv
+                    logger.info("Discovered Philips: %s", tv)
+
+        except socket.timeout:
+            break
+        except Exception as e:
+            logger.debug("Error processing SSDP response: %s", e)
+
+    sock.close()
+    return list(found.values())

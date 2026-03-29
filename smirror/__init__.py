@@ -1,3 +1,3 @@
-"""Smirror - Samsung TV Screen Mirror tool."""
+"""Smirror - Smart TV Screen Mirror tool (Samsung & Philips)."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
