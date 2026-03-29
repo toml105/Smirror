@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
-    <title>Smirror - Samsung TV Remote</title>
+    <title>Smirror - Smart TV Remote</title>
     <style>
         :root {
             --bg: #121212;
@@ -430,6 +430,62 @@
         .main-app.visible {
             display: block;
         }
+
+        .tv-brand-btn {
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        .tv-brand-btn.active {
+            background: var(--primary-dark) !important;
+            color: white !important;
+            border-color: var(--primary) !important;
+        }
+
+        /* Philips pairing modal */
+        .pair-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .pair-modal.show {
+            display: flex;
+        }
+
+        .pair-modal-content {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 24px;
+            max-width: 340px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .pair-modal-content h3 {
+            color: var(--primary);
+            margin-bottom: 12px;
+        }
+
+        .pair-modal-content p {
+            font-size: 14px;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+            line-height: 1.5;
+        }
+
+        .pair-modal-content input {
+            width: 100%;
+            text-align: center;
+            font-size: 24px;
+            letter-spacing: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+        }
     </style>
 </head>
 <body>
@@ -439,7 +495,7 @@
     <div class="welcome-icon">&#128250;</div>
     <h1>Hey! Welcome to Smirror</h1>
     <div class="greeting">
-        Turn your phone into a remote for the Samsung TV.<br>
+        Turn your phone into a remote for your Samsung or Philips TV.<br>
         No apps to install — let's get you connected.
     </div>
 
@@ -450,11 +506,11 @@
         </div>
         <div class="setup-step">
             <div class="step-num">2</div>
-            <div class="step-text">Find the TV's IP address:<br><strong>TV Settings > General > Network > Network Status</strong></div>
+            <div class="step-text">Find the TV's IP address:<br><strong>TV Settings > Network > Network Status</strong></div>
         </div>
         <div class="setup-step">
             <div class="step-num">3</div>
-            <div class="step-text">When the TV asks to allow the connection, tap <strong>Allow</strong> on the TV</div>
+            <div class="step-text">Select your <strong>TV brand</strong> (Samsung or Philips) and tap <strong>Connect</strong></div>
         </div>
     </div>
 
@@ -467,7 +523,7 @@
 
 <div class="header">
     <h1>Smirror</h1>
-    <div class="subtitle">Samsung TV Remote & Cast</div>
+    <div class="subtitle">Smart TV Remote & Cast</div>
 </div>
 
 <div class="status-bar">
@@ -478,6 +534,10 @@
 <!-- Connection Panel -->
 <div class="panel" id="connectPanel">
     <h2>Connect to TV</h2>
+    <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+        <button class="btn-secondary tv-brand-btn active" id="brandSamsung" onclick="setBrand('samsung')" style="flex:1; padding: 10px; font-weight: 700;">Samsung</button>
+        <button class="btn-secondary tv-brand-btn" id="brandPhilips" onclick="setBrand('philips')" style="flex:1; padding: 10px; font-weight: 700;">Philips</button>
+    </div>
     <div class="input-row">
         <input type="text" id="tvIp" placeholder="TV IP address (e.g. 192.168.1.100)"
                inputmode="decimal" autocomplete="off">
@@ -487,7 +547,7 @@
         <button class="btn-secondary" style="flex:1;" onclick="scanForTV()">Find My TV</button>
         <button class="btn-secondary" style="flex:1;" onclick="toggleHelp()">Hotel TV Help</button>
     </div>
-    <div class="hint">
+    <div class="hint" id="ipHint">
         Find the TV's IP: TV Settings &gt; General &gt; Network &gt; Network Status
     </div>
 
@@ -664,7 +724,8 @@
 <div class="tab-content" id="tab-apps">
     <div class="panel">
         <h2>Quick Launch</h2>
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+        <!-- Samsung Apps -->
+        <div id="samsungApps" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
             <button class="btn-secondary" onclick="launchApp('111299001912')">YouTube</button>
             <button class="btn-secondary" onclick="launchApp('3201907018807')">Netflix</button>
             <button class="btn-secondary" onclick="launchApp('3201601007250')">Prime Video</button>
@@ -674,6 +735,18 @@
             <button class="btn-secondary" onclick="launchApp('3201512006785')">Plex</button>
             <button class="btn-secondary" onclick="launchApp('3201606009684')">Spotify</button>
             <button class="btn-secondary" onclick="launchApp('3201611010983')">HBO Max</button>
+        </div>
+        <!-- Philips Apps (Android TV packages) -->
+        <div id="philipsApps" style="display: none; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+            <button class="btn-secondary" onclick="launchApp('com.google.android.youtube.tv')">YouTube</button>
+            <button class="btn-secondary" onclick="launchApp('com.netflix.ninja')">Netflix</button>
+            <button class="btn-secondary" onclick="launchApp('com.amazon.amazonvideo.livingroom')">Prime Video</button>
+            <button class="btn-secondary" onclick="launchApp('com.hulu.livingroomplus')">Hulu</button>
+            <button class="btn-secondary" onclick="launchApp('com.disney.disneyplus')">Disney+</button>
+            <button class="btn-secondary" onclick="launchApp('com.aspect.webbrowser')">Browser</button>
+            <button class="btn-secondary" onclick="launchApp('com.plexapp.android')">Plex</button>
+            <button class="btn-secondary" onclick="launchApp('com.spotify.tv.android')">Spotify</button>
+            <button class="btn-secondary" onclick="launchApp('com.hbo.hbomax')">HBO Max</button>
         </div>
         <div class="hint" style="margin-top: 8px;">
             App IDs may vary by TV model and region. If an app doesn't launch,
@@ -687,16 +760,68 @@
 
 </div><!-- end mainApp -->
 
+<!-- Philips Pairing Modal -->
+<div class="pair-modal" id="pairModal">
+    <div class="pair-modal-content">
+        <h3>Philips TV Pairing</h3>
+        <p>A PIN code should appear on your TV screen.<br>Enter it below to complete pairing.</p>
+        <input type="text" id="pairPin" placeholder="PIN" inputmode="numeric" maxlength="4" autocomplete="off">
+        <div style="display: flex; gap: 8px;">
+            <button class="btn-secondary" style="flex:1;" onclick="cancelPairing()">Cancel</button>
+            <button class="btn-primary" style="flex:1;" onclick="submitPin()">Pair</button>
+        </div>
+    </div>
+</div>
+
 <script>
     let ws = null;
     let connected = false;
     let tvIp = '';
     let pairingToken = '';
+    let tvBrand = 'samsung'; // 'samsung' or 'philips'
+    let philipsAuth = null; // { deviceId, authKey } for Philips
+
+    // Philips key mapping from Samsung KEY_* names
+    const PHILIPS_KEY_MAP = {
+        'KEY_POWER': 'Standby', 'KEY_POWEROFF': 'Standby',
+        'KEY_VOLUP': 'VolumeUp', 'KEY_VOLDOWN': 'VolumeDown', 'KEY_MUTE': 'Mute',
+        'KEY_CHUP': 'ChannelStepUp', 'KEY_CHDOWN': 'ChannelStepDown',
+        'KEY_UP': 'CursorUp', 'KEY_DOWN': 'CursorDown',
+        'KEY_LEFT': 'CursorLeft', 'KEY_RIGHT': 'CursorRight',
+        'KEY_ENTER': 'Confirm', 'KEY_RETURN': 'Back',
+        'KEY_HOME': 'Home', 'KEY_SOURCE': 'Source',
+        'KEY_MENU': 'Options', 'KEY_TOOLS': 'Options', 'KEY_INFO': 'Info',
+        'KEY_PLAY': 'Play', 'KEY_PAUSE': 'Pause', 'KEY_STOP': 'Stop',
+        'KEY_FF': 'FastForward', 'KEY_REWIND': 'Rewind',
+        'KEY_0': 'Digit0', 'KEY_1': 'Digit1', 'KEY_2': 'Digit2',
+        'KEY_3': 'Digit3', 'KEY_4': 'Digit4', 'KEY_5': 'Digit5',
+        'KEY_6': 'Digit6', 'KEY_7': 'Digit7', 'KEY_8': 'Digit8', 'KEY_9': 'Digit9',
+    };
 
     function startApp() {
         document.getElementById('welcomeScreen').classList.add('hidden');
         document.getElementById('mainApp').classList.add('visible');
         localStorage.setItem('smirror_welcomed', 'true');
+    }
+
+    function setBrand(brand) {
+        tvBrand = brand;
+        document.getElementById('brandSamsung').classList.toggle('active', brand === 'samsung');
+        document.getElementById('brandPhilips').classList.toggle('active', brand === 'philips');
+
+        // Update cert warning visibility
+        document.getElementById('certWarning').className = 'cert-warning';
+
+        // Toggle app grids
+        const sApps = document.getElementById('samsungApps');
+        const pApps = document.getElementById('philipsApps');
+        if (sApps && pApps) {
+            sApps.style.display = brand === 'samsung' ? 'grid' : 'none';
+            pApps.style.display = brand === 'philips' ? 'grid' : 'none';
+        }
+
+        // Save brand preference
+        saveSettings();
     }
 
     // Load saved settings
@@ -706,8 +831,12 @@
             const data = JSON.parse(saved);
             if (data.ip) document.getElementById('tvIp').value = data.ip;
             if (data.token) pairingToken = data.token;
+            if (data.brand) tvBrand = data.brand;
+            if (data.philipsAuth) philipsAuth = data.philipsAuth;
         } catch(e) {}
     }
+    // Apply saved brand
+    setBrand(tvBrand);
 
     // Skip welcome for returning users
     if (localStorage.getItem('smirror_welcomed')) {
@@ -717,7 +846,9 @@
     function saveSettings() {
         localStorage.setItem('smirror', JSON.stringify({
             ip: tvIp,
-            token: pairingToken
+            token: pairingToken,
+            brand: tvBrand,
+            philipsAuth: philipsAuth
         }));
     }
 
@@ -750,7 +881,68 @@
         }
     }
 
-    function connect() {
+    // ==================== Philips TV HTTP API ====================
+
+    function philipsApiUrl(path) {
+        // Use HTTP on port 1925 (HTTPS on 1926 won't work from browser due to CORS/cert issues)
+        return `http://${tvIp}:1925/6/${path}`;
+    }
+
+    async function philipsSendKey(key) {
+        try {
+            const resp = await fetch(philipsApiUrl('input/key'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: key }),
+            });
+            return resp.ok;
+        } catch(e) {
+            log(`Failed to send key: ${e.message}`, 'error');
+            return false;
+        }
+    }
+
+    async function philipsGetSystem() {
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 3000);
+            const resp = await fetch(philipsApiUrl('system'), {
+                signal: controller.signal,
+            });
+            clearTimeout(timeout);
+            if (resp.ok) return await resp.json();
+        } catch(e) {}
+        return null;
+    }
+
+    async function philipsConnect() {
+        tvIp = document.getElementById('tvIp').value.trim();
+        if (!tvIp) {
+            log('Please enter the TV IP address', 'error');
+            return;
+        }
+
+        setStatus('Connecting to Philips TV...', false);
+        log(`Connecting to Philips TV at ${tvIp}...`, 'info');
+
+        const info = await philipsGetSystem();
+        if (info) {
+            const tvName = info.name || 'Philips TV';
+            setStatus(`Connected to ${tvName}`, true);
+            log(`Connected to ${tvName} (${info.model || 'Philips'})`, 'success');
+            saveSettings();
+            return;
+        }
+
+        // Try HTTPS on 1926 as last resort info display
+        log('Could not connect via HTTP. Philips TV may require pairing or may not be reachable.', 'error');
+        log('Make sure the TV is on and both devices are on the same WiFi.', 'info');
+        setStatus('Connection failed', false);
+    }
+
+    // ==================== Samsung TV WebSocket API ====================
+
+    function samsungConnect() {
         tvIp = document.getElementById('tvIp').value.trim();
         if (!tvIp) {
             log('Please enter the TV IP address', 'error');
@@ -764,7 +956,7 @@
         }
 
         setStatus('Connecting...', false);
-        log(`Connecting to ${tvIp}...`, 'info');
+        log(`Connecting to Samsung TV at ${tvIp}...`, 'info');
 
         // Show certificate warning
         const certLink = document.getElementById('certLink');
@@ -789,7 +981,6 @@
                 const event = data.event;
 
                 if (event === 'ms.channel.connect') {
-                    // Connected!
                     if (data.data && data.data.token) {
                         pairingToken = data.data.token;
                         saveSettings();
@@ -797,7 +988,7 @@
                     }
                     setStatus(`Connected to ${tvIp}`, true);
                     document.getElementById('certWarning').className = 'cert-warning';
-                    log('Connected to TV!', 'success');
+                    log('Connected to Samsung TV!', 'success');
                     saveSettings();
                 }
                 else if (event === 'ms.channel.unauthorized') {
@@ -829,6 +1020,16 @@
         };
     }
 
+    // ==================== Unified connect/disconnect ====================
+
+    function connect() {
+        if (tvBrand === 'philips') {
+            philipsConnect();
+        } else {
+            samsungConnect();
+        }
+    }
+
     function disconnect() {
         if (ws) {
             ws.close();
@@ -839,7 +1040,26 @@
     }
 
     function sendKey(key) {
-        if (!ws || !connected) {
+        if (!connected) {
+            log('Not connected to TV', 'error');
+            return;
+        }
+
+        // Haptic feedback
+        if (navigator.vibrate) {
+            navigator.vibrate(30);
+        }
+
+        if (tvBrand === 'philips') {
+            // Map Samsung KEY_* to Philips key names
+            const philipsKey = PHILIPS_KEY_MAP[key] || key;
+            philipsSendKey(philipsKey);
+            log(`Key: ${philipsKey}`);
+            return;
+        }
+
+        // Samsung WebSocket
+        if (!ws) {
             log('Not connected to TV', 'error');
             return;
         }
@@ -856,11 +1076,6 @@
 
         ws.send(JSON.stringify(payload));
         log(`Key: ${key}`);
-
-        // Haptic feedback if available
-        if (navigator.vibrate) {
-            navigator.vibrate(30);
-        }
     }
 
     function castUrl() {
@@ -869,11 +1084,35 @@
             log('Please enter a URL', 'error');
             return;
         }
-        if (!ws || !connected) {
+        if (!connected) {
             log('Not connected to TV', 'error');
             return;
         }
 
+        if (tvBrand === 'philips') {
+            // Philips: launch browser via activities API
+            fetch(philipsApiUrl('activities/launch'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    intent: {
+                        action: 'android.intent.action.VIEW',
+                        component: {
+                            packageName: 'org.chromium.webview_shell',
+                            className: 'org.chromium.webview_shell.WebViewBrowserActivity',
+                        },
+                        data: url,
+                    }
+                }),
+            }).then(() => {
+                log(`Opening URL on Philips TV: ${url}`, 'success');
+            }).catch(e => {
+                log(`Failed to open URL: ${e.message}`, 'error');
+            });
+            return;
+        }
+
+        // Samsung
         const payload = {
             method: 'ms.channel.emit',
             params: {
@@ -897,7 +1136,7 @@
             log('Please enter a YouTube URL or video ID', 'error');
             return;
         }
-        if (!ws || !connected) {
+        if (!connected) {
             log('Not connected to TV', 'error');
             return;
         }
@@ -916,6 +1155,30 @@
             }
         }
 
+        if (tvBrand === 'philips') {
+            // Philips: launch YouTube app with deep link
+            fetch(philipsApiUrl('activities/launch'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    intent: {
+                        action: 'android.intent.action.VIEW',
+                        component: {
+                            packageName: 'com.google.android.youtube.tv',
+                            className: 'com.google.android.apps.youtube.tv.activity.ShellActivity',
+                        },
+                        data: `https://www.youtube.com/watch?v=${videoId}`,
+                    }
+                }),
+            }).then(() => {
+                log(`Launching YouTube video: ${videoId}`, 'success');
+            }).catch(e => {
+                log(`Failed to launch YouTube: ${e.message}`, 'error');
+            });
+            return;
+        }
+
+        // Samsung
         const payload = {
             method: 'ms.channel.emit',
             params: {
@@ -936,11 +1199,17 @@
     function sendTextInput() {
         const text = document.getElementById('textInput').value;
         if (!text) return;
-        if (!ws || !connected) {
+        if (!connected) {
             log('Not connected to TV', 'error');
             return;
         }
 
+        if (tvBrand === 'philips') {
+            log('Text input is limited on Philips TVs.', 'info');
+            return;
+        }
+
+        // Samsung
         const payload = {
             method: 'ms.remote.control',
             params: {
@@ -956,11 +1225,31 @@
     }
 
     function launchApp(appId) {
-        if (!ws || !connected) {
+        if (!connected) {
             log('Not connected to TV', 'error');
             return;
         }
 
+        if (tvBrand === 'philips') {
+            // For Philips, appId is an Android package name
+            fetch(philipsApiUrl('activities/launch'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    intent: {
+                        action: 'android.intent.action.MAIN',
+                        component: { packageName: appId, className: '' },
+                    }
+                }),
+            }).then(() => {
+                log(`Launching app: ${appId}`, 'success');
+            }).catch(e => {
+                log(`Failed to launch app: ${e.message}`, 'error');
+            });
+            return;
+        }
+
+        // Samsung
         const payload = {
             method: 'ms.channel.emit',
             params: {
@@ -975,6 +1264,42 @@
 
         ws.send(JSON.stringify(payload));
         log(`Launching app: ${appId}`, 'success');
+    }
+
+    // Philips pairing
+    function cancelPairing() {
+        document.getElementById('pairModal').classList.remove('show');
+    }
+
+    async function submitPin() {
+        const pin = document.getElementById('pairPin').value.trim();
+        if (!pin) {
+            log('Please enter the PIN', 'error');
+            return;
+        }
+
+        try {
+            const resp = await fetch(philipsApiUrl('pair/grant'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    auth: { auth_AppId: '1', pin: pin, auth_timestamp: '', auth_signature: '' },
+                    device: { device_name: 'Smirror', device_os: 'Browser', app_id: 'app.id.smirror', app_name: 'Smirror', type: 'native', id: 'smirror_web' },
+                }),
+            });
+            if (resp.ok) {
+                const data = await resp.json();
+                philipsAuth = { deviceId: 'smirror_web', authKey: data.auth_key || pin };
+                saveSettings();
+                log('Pairing successful!', 'success');
+                document.getElementById('pairModal').classList.remove('show');
+                philipsConnect();
+            } else {
+                log('Pairing failed. Check the PIN.', 'error');
+            }
+        } catch(e) {
+            log(`Pairing error: ${e.message}`, 'error');
+        }
     }
 
     function switchTab(name) {
@@ -1053,16 +1378,20 @@
             for (let j = 0; j < results.length; j++) {
                 if (results[j]) {
                     found.push({ ip: batch[j], info: results[j] });
+                    const tvInfo = results[j];
+                    const tvBrand = tvInfo.brand || 'samsung';
+                    const brandLabel = tvBrand.charAt(0).toUpperCase() + tvBrand.slice(1);
                     const btn = document.createElement('button');
                     btn.className = 'btn-primary';
                     btn.style.cssText = 'width:100%; margin-top:4px; text-align:left; padding:10px 14px;';
-                    btn.innerHTML = `<strong>${results[j].name || 'Samsung TV'}</strong><br><span style="font-size:12px; opacity:0.8;">${batch[j]} — Tap to connect</span>`;
+                    btn.innerHTML = `<strong>[${brandLabel}] ${tvInfo.name || 'Smart TV'}</strong><br><span style="font-size:12px; opacity:0.8;">${batch[j]} — Tap to connect</span>`;
                     btn.onclick = function() {
                         document.getElementById('tvIp').value = batch[j];
+                        setBrand(tvBrand);
                         connect();
                     };
                     resultsEl.appendChild(btn);
-                    log(`Found TV: ${results[j].name || 'Samsung TV'} at ${batch[j]}`, 'success');
+                    log(`Found ${brandLabel} TV: ${tvInfo.name || 'Smart TV'} at ${batch[j]}`, 'success');
                 }
             }
 
@@ -1072,7 +1401,7 @@
         }
 
         if (found.length === 0) {
-            statusEl.textContent = 'No Samsung TVs found on this network.';
+            statusEl.textContent = 'No Smart TVs found on this network.';
             resultsEl.innerHTML = '<div style="color: var(--text-dim); font-size: 12px; margin-top: 4px;">The TV might be on a different network, or the hotel network blocks device-to-device connections. Try the Hotel TV Help button for alternatives.</div>';
             log('Scan complete: no TVs found', 'error');
         } else {
@@ -1084,7 +1413,13 @@
     }
 
     async function checkTV(ip) {
-        // Try to hit the Samsung TV REST API with a short timeout
+        // Try Samsung first, then Philips
+        const result = await checkSamsungTV(ip);
+        if (result) return result;
+        return await checkPhilipsTV(ip);
+    }
+
+    async function checkSamsungTV(ip) {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 1500);
 
@@ -1096,7 +1431,29 @@
             clearTimeout(timeout);
             if (resp.ok) {
                 const data = await resp.json();
-                return data.device || { name: 'Samsung TV' };
+                const device = data.device || {};
+                return { name: device.name || 'Samsung TV', brand: 'samsung', ip: ip };
+            }
+        } catch(e) {
+            clearTimeout(timeout);
+        }
+        return null;
+    }
+
+    async function checkPhilipsTV(ip) {
+        // Philips JointSpace API on port 1925 (HTTP)
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 1500);
+
+        try {
+            const resp = await fetch(`http://${ip}:1925/6/system`, {
+                signal: controller.signal,
+                mode: 'cors'
+            });
+            clearTimeout(timeout);
+            if (resp.ok) {
+                const data = await resp.json();
+                return { name: data.name || 'Philips TV', brand: 'philips', ip: ip };
             }
         } catch(e) {
             clearTimeout(timeout);
