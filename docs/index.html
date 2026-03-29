@@ -548,7 +548,12 @@
         <button class="btn-secondary" style="flex:1;" onclick="toggleHelp()">Hotel TV Help</button>
     </div>
     <div class="hint" id="ipHint">
-        Find the TV's IP: TV Settings &gt; General &gt; Network &gt; Network Status
+        Find the TV's IP: TV Settings &gt; Network &gt; View network settings
+    </div>
+    <div id="philipsTestBtn" style="display:none; margin-top: 8px;">
+        <button class="btn-secondary" style="width:100%; background: #1a2332; border-color: #234;" onclick="philipsTestConnection()">
+            Test Connection (send volume up/down)
+        </button>
     </div>
 
     <!-- Scan Progress -->
@@ -867,6 +872,20 @@
         document.getElementById('statusText').textContent = text;
         document.getElementById('statusDot').className = 'status-dot' + (isConnected ? ' connected' : '');
         document.getElementById('connectBtn').textContent = isConnected ? 'Disconnect' : 'Connect';
+        // Show test button for Philips when connected
+        const testBtn = document.getElementById('philipsTestBtn');
+        if (testBtn) {
+            testBtn.style.display = (isConnected && tvBrand === 'philips') ? 'block' : 'none';
+        }
+    }
+
+    async function philipsTestConnection() {
+        log('Testing: sending VolumeUp then VolumeDown...', 'info');
+        await philipsSendKey('VolumeUp');
+        setTimeout(async () => {
+            await philipsSendKey('VolumeDown');
+            log('Test sent! Did the TV volume change briefly?', 'info');
+        }, 800);
     }
 
     function b64encode(str) {
@@ -883,26 +902,58 @@
 
     // ==================== Philips TV HTTP API ====================
 
+    // Philips TVs don't send CORS headers, so browsers block reading responses.
+    // Workaround: use mode:'no-cors' — the TV still receives and acts on POST
+    // requests even though the browser gets an opaque response.
+    // For connection detection: we probe multiple ports and check if requests
+    // complete quickly (TV is there) vs time out (TV not reachable).
+
+    let philipsPort = 1925; // will try 1925 (HTTP) and 1926 (HTTPS)
+    let philipsScheme = 'http';
+
     function philipsApiUrl(path) {
-        // Use HTTP on port 1925 (HTTPS on 1926 won't work from browser due to CORS/cert issues)
-        return `http://${tvIp}:1925/6/${path}`;
+        return `${philipsScheme}://${tvIp}:${philipsPort}/6/${path}`;
     }
 
-    async function philipsSendKey(key) {
+    async function philipsPost(path, data) {
+        // Send a POST to the Philips API using no-cors mode.
+        // The TV receives and processes the request even though the
+        // browser can't read the response (CORS opaque response).
+        // We use text/plain Content-Type to avoid triggering a
+        // preflight OPTIONS request that the TV can't handle.
         try {
-            const resp = await fetch(philipsApiUrl('input/key'), {
+            await fetch(philipsApiUrl(path), {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ key: key }),
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify(data),
             });
-            return resp.ok;
+            return true;
         } catch(e) {
-            log(`Failed to send key: ${e.message}`, 'error');
-            return false;
+            // Fallback: try with CORS (works if TV supports it)
+            try {
+                const resp = await fetch(philipsApiUrl(path), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                return resp.ok;
+            } catch(e2) {
+                return false;
+            }
         }
     }
 
+    async function philipsSendKey(key) {
+        const ok = await philipsPost('input/key', { key: key });
+        if (!ok) {
+            log(`Failed to send key: ${key}`, 'error');
+        }
+        return ok;
+    }
+
     async function philipsGetSystem() {
+        // Try to read system info (works if CORS is enabled or same-origin)
         try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 3000);
@@ -915,6 +966,37 @@
         return null;
     }
 
+    async function philipsProbeReachable(scheme, port) {
+        // Check if the TV is reachable on a given port.
+        // With no-cors, an opaque response means the host IS there.
+        // A network error/timeout means it's not.
+        const url = `${scheme}://${tvIp}:${port}/6/system`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2500);
+        const startTime = Date.now();
+
+        try {
+            const resp = await fetch(url, {
+                mode: 'no-cors',
+                signal: controller.signal,
+            });
+            clearTimeout(timeout);
+            // Opaque response (type === 'opaque') means the TV responded
+            // but CORS blocked reading it — TV IS reachable
+            return { reachable: true, time: Date.now() - startTime };
+        } catch(e) {
+            clearTimeout(timeout);
+            const elapsed = Date.now() - startTime;
+            // Fast rejection (< 500ms) with TypeError usually means
+            // CORS blocked it but the TCP connection was made — TV is there
+            // but on HTTPS with cert issues. Slow timeout means unreachable.
+            if (elapsed < 500 && e.name !== 'AbortError') {
+                return { reachable: true, time: elapsed, certIssue: true };
+            }
+            return { reachable: false, time: elapsed };
+        }
+    }
+
     async function philipsConnect() {
         tvIp = document.getElementById('tvIp').value.trim();
         if (!tvIp) {
@@ -925,18 +1007,71 @@
         setStatus('Connecting to Philips TV...', false);
         log(`Connecting to Philips TV at ${tvIp}...`, 'info');
 
-        const info = await philipsGetSystem();
+        // Try reading system info directly first (works if no CORS issues)
+        philipsScheme = 'http';
+        philipsPort = 1925;
+        let info = await philipsGetSystem();
         if (info) {
             const tvName = info.name || 'Philips TV';
             setStatus(`Connected to ${tvName}`, true);
-            log(`Connected to ${tvName} (${info.model || 'Philips'})`, 'success');
+            log(`Connected to ${tvName} (${info.model || 'Philips'}) on port 1925`, 'success');
             saveSettings();
             return;
         }
 
-        // Try HTTPS on 1926 as last resort info display
-        log('Could not connect via HTTP. Philips TV may require pairing or may not be reachable.', 'error');
-        log('Make sure the TV is on and both devices are on the same WiFi.', 'info');
+        // Try HTTPS on 1926
+        philipsScheme = 'https';
+        philipsPort = 1926;
+        info = await philipsGetSystem();
+        if (info) {
+            const tvName = info.name || 'Philips TV';
+            setStatus(`Connected to ${tvName}`, true);
+            log(`Connected to ${tvName} (${info.model || 'Philips'}) on port 1926`, 'success');
+            saveSettings();
+            return;
+        }
+
+        // CORS is likely blocking reads — probe if TV is reachable anyway
+        log('CORS blocking direct reads. Probing TV reachability...', 'info');
+
+        const probes = await Promise.all([
+            philipsProbeReachable('http', 1925),
+            philipsProbeReachable('https', 1926),
+        ]);
+
+        const httpProbe = probes[0];
+        const httpsProbe = probes[1];
+
+        log(`Port 1925 (HTTP): ${httpProbe.reachable ? 'reachable' : 'no response'} (${httpProbe.time}ms)`, httpProbe.reachable ? 'info' : 'error');
+        log(`Port 1926 (HTTPS): ${httpsProbe.reachable ? 'reachable' : 'no response'} (${httpsProbe.time}ms)`, httpsProbe.reachable ? 'info' : 'error');
+
+        if (httpProbe.reachable) {
+            philipsScheme = 'http';
+            philipsPort = 1925;
+            setStatus(`Connected to Philips TV (${tvIp})`, true);
+            log('Connected! TV found on port 1925. CORS prevents reading info but commands will work.', 'success');
+            log('Try pressing a button — if the TV responds, you\'re all set!', 'info');
+            saveSettings();
+            return;
+        }
+
+        if (httpsProbe.reachable) {
+            philipsScheme = 'https';
+            philipsPort = 1926;
+            setStatus(`Connected to Philips TV (${tvIp})`, true);
+            log('Connected! TV found on port 1926. Commands sent via HTTPS.', 'success');
+            log('Try pressing a button — if the TV responds, you\'re all set!', 'info');
+            saveSettings();
+            return;
+        }
+
+        // Nothing worked
+        log('Could not reach a Philips TV at ' + tvIp, 'error');
+        log('Troubleshooting:', 'info');
+        log('  1. Is the TV powered ON (not just standby)?', 'info');
+        log('  2. Are you on the same WiFi as the TV?', 'info');
+        log('  3. Try the TV\'s IP from: TV Settings > Network > View network settings', 'info');
+        log('  4. Some TVs need the JointSpace API enabled in settings', 'info');
         setStatus('Connection failed', false);
     }
 
@@ -1090,25 +1225,18 @@
         }
 
         if (tvBrand === 'philips') {
-            // Philips: launch browser via activities API
-            fetch(philipsApiUrl('activities/launch'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    intent: {
-                        action: 'android.intent.action.VIEW',
-                        component: {
-                            packageName: 'org.chromium.webview_shell',
-                            className: 'org.chromium.webview_shell.WebViewBrowserActivity',
-                        },
-                        data: url,
-                    }
-                }),
-            }).then(() => {
-                log(`Opening URL on Philips TV: ${url}`, 'success');
-            }).catch(e => {
-                log(`Failed to open URL: ${e.message}`, 'error');
+            // Philips: launch browser via activities API (no-cors to bypass CORS)
+            philipsPost('activities/launch', {
+                intent: {
+                    action: 'android.intent.action.VIEW',
+                    component: {
+                        packageName: 'org.chromium.webview_shell',
+                        className: 'org.chromium.webview_shell.WebViewBrowserActivity',
+                    },
+                    data: url,
+                }
             });
+            log(`Opening URL on Philips TV: ${url}`, 'success');
             return;
         }
 
@@ -1156,25 +1284,18 @@
         }
 
         if (tvBrand === 'philips') {
-            // Philips: launch YouTube app with deep link
-            fetch(philipsApiUrl('activities/launch'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    intent: {
-                        action: 'android.intent.action.VIEW',
-                        component: {
-                            packageName: 'com.google.android.youtube.tv',
-                            className: 'com.google.android.apps.youtube.tv.activity.ShellActivity',
-                        },
-                        data: `https://www.youtube.com/watch?v=${videoId}`,
-                    }
-                }),
-            }).then(() => {
-                log(`Launching YouTube video: ${videoId}`, 'success');
-            }).catch(e => {
-                log(`Failed to launch YouTube: ${e.message}`, 'error');
+            // Philips: launch YouTube app with deep link (no-cors to bypass CORS)
+            philipsPost('activities/launch', {
+                intent: {
+                    action: 'android.intent.action.VIEW',
+                    component: {
+                        packageName: 'com.google.android.youtube.tv',
+                        className: 'com.google.android.apps.youtube.tv.activity.ShellActivity',
+                    },
+                    data: `https://www.youtube.com/watch?v=${videoId}`,
+                }
             });
+            log(`Launching YouTube video: ${videoId}`, 'success');
             return;
         }
 
@@ -1231,21 +1352,28 @@
         }
 
         if (tvBrand === 'philips') {
-            // For Philips, appId is an Android package name
-            fetch(philipsApiUrl('activities/launch'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    intent: {
-                        action: 'android.intent.action.MAIN',
-                        component: { packageName: appId, className: '' },
-                    }
-                }),
-            }).then(() => {
-                log(`Launching app: ${appId}`, 'success');
-            }).catch(e => {
-                log(`Failed to launch app: ${e.message}`, 'error');
-            });
+            // For Philips, use Android intents. Some apps need specific launch intents.
+            let intent;
+            if (appId === 'com.netflix.ninja') {
+                // Netflix needs a specific intent to launch properly
+                intent = {
+                    action: 'android.intent.action.MAIN',
+                    component: {
+                        packageName: 'com.netflix.ninja',
+                        className: 'com.netflix.ninja.MainActivity',
+                    },
+                    extras: {}
+                };
+            } else {
+                intent = {
+                    action: 'android.intent.action.MAIN',
+                    component: { packageName: appId, className: '' },
+                };
+            }
+            philipsPost('activities/launch', { intent: intent });
+            // Also try launching via the applications endpoint as fallback
+            philipsPost('applications/launch', { id: appId });
+            log(`Launching app: ${appId}`, 'success');
             return;
         }
 
@@ -1278,27 +1406,19 @@
             return;
         }
 
-        try {
-            const resp = await fetch(philipsApiUrl('pair/grant'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    auth: { auth_AppId: '1', pin: pin, auth_timestamp: '', auth_signature: '' },
-                    device: { device_name: 'Smirror', device_os: 'Browser', app_id: 'app.id.smirror', app_name: 'Smirror', type: 'native', id: 'smirror_web' },
-                }),
-            });
-            if (resp.ok) {
-                const data = await resp.json();
-                philipsAuth = { deviceId: 'smirror_web', authKey: data.auth_key || pin };
-                saveSettings();
-                log('Pairing successful!', 'success');
-                document.getElementById('pairModal').classList.remove('show');
-                philipsConnect();
-            } else {
-                log('Pairing failed. Check the PIN.', 'error');
-            }
-        } catch(e) {
-            log(`Pairing error: ${e.message}`, 'error');
+        const ok = await philipsPost('pair/grant', {
+            auth: { auth_AppId: '1', pin: pin, auth_timestamp: '', auth_signature: '' },
+            device: { device_name: 'Smirror', device_os: 'Browser', app_id: 'app.id.smirror', app_name: 'Smirror', type: 'native', id: 'smirror_web' },
+        });
+
+        if (ok) {
+            philipsAuth = { deviceId: 'smirror_web', authKey: pin };
+            saveSettings();
+            log('Pairing sent! If the TV accepted it, you\'re paired.', 'success');
+            document.getElementById('pairModal').classList.remove('show');
+            philipsConnect();
+        } else {
+            log('Pairing request failed to reach the TV.', 'error');
         }
     }
 
@@ -1388,6 +1508,11 @@
                     btn.onclick = function() {
                         document.getElementById('tvIp').value = batch[j];
                         setBrand(tvBrand);
+                        // If Philips with detected port, set it
+                        if (tvInfo.brand === 'philips' && tvInfo.port) {
+                            philipsPort = tvInfo.port;
+                            philipsScheme = tvInfo.scheme || (tvInfo.port === 1926 ? 'https' : 'http');
+                        }
                         connect();
                     };
                     resultsEl.appendChild(btn);
@@ -1441,23 +1566,60 @@
     }
 
     async function checkPhilipsTV(ip) {
-        // Philips JointSpace API on port 1925 (HTTP)
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 1500);
-
+        // Try HTTP port 1925 first (CORS-friendly on some models)
+        const controller1 = new AbortController();
+        const timeout1 = setTimeout(() => controller1.abort(), 1500);
         try {
             const resp = await fetch(`http://${ip}:1925/6/system`, {
-                signal: controller.signal,
-                mode: 'cors'
+                signal: controller1.signal,
             });
-            clearTimeout(timeout);
+            clearTimeout(timeout1);
             if (resp.ok) {
                 const data = await resp.json();
-                return { name: data.name || 'Philips TV', brand: 'philips', ip: ip };
+                return { name: data.name || 'Philips TV', brand: 'philips', ip: ip, port: 1925, scheme: 'http' };
             }
         } catch(e) {
-            clearTimeout(timeout);
+            clearTimeout(timeout1);
         }
+
+        // Try no-cors probe on 1925 — if it resolves fast, TV is there (just CORS-blocked)
+        const controller2 = new AbortController();
+        const timeout2 = setTimeout(() => controller2.abort(), 1200);
+        const startTime = Date.now();
+        try {
+            await fetch(`http://${ip}:1925/6/system`, {
+                mode: 'no-cors',
+                signal: controller2.signal,
+            });
+            clearTimeout(timeout2);
+            // Opaque response = TV is there
+            return { name: 'Philips TV', brand: 'philips', ip: ip, port: 1925, scheme: 'http' };
+        } catch(e) {
+            clearTimeout(timeout2);
+            // Fast rejection (< 400ms) often means CORS blocked but TCP connected
+            if (Date.now() - startTime < 400 && e.name !== 'AbortError') {
+                return { name: 'Philips TV', brand: 'philips', ip: ip, port: 1925, scheme: 'http' };
+            }
+        }
+
+        // Try HTTPS port 1926 with no-cors
+        const controller3 = new AbortController();
+        const timeout3 = setTimeout(() => controller3.abort(), 1200);
+        const startTime2 = Date.now();
+        try {
+            await fetch(`https://${ip}:1926/6/system`, {
+                mode: 'no-cors',
+                signal: controller3.signal,
+            });
+            clearTimeout(timeout3);
+            return { name: 'Philips TV', brand: 'philips', ip: ip, port: 1926, scheme: 'https' };
+        } catch(e) {
+            clearTimeout(timeout3);
+            if (Date.now() - startTime2 < 400 && e.name !== 'AbortError') {
+                return { name: 'Philips TV', brand: 'philips', ip: ip, port: 1926, scheme: 'https' };
+            }
+        }
+
         return null;
     }
 
