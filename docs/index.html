@@ -742,16 +742,21 @@
             <button class="btn-secondary" onclick="launchApp('3201611010983')">HBO Max</button>
         </div>
         <!-- Philips Apps (Android TV packages) -->
-        <div id="philipsApps" style="display: none; grid-template-columns: repeat(3, 1fr); gap: 8px;">
-            <button class="btn-secondary" onclick="launchApp('com.google.android.youtube.tv')">YouTube</button>
-            <button class="btn-secondary" onclick="launchApp('com.netflix.ninja')">Netflix</button>
-            <button class="btn-secondary" onclick="launchApp('com.amazon.amazonvideo.livingroom')">Prime Video</button>
-            <button class="btn-secondary" onclick="launchApp('com.hulu.livingroomplus')">Hulu</button>
-            <button class="btn-secondary" onclick="launchApp('com.disney.disneyplus')">Disney+</button>
-            <button class="btn-secondary" onclick="launchApp('com.aspect.webbrowser')">Browser</button>
-            <button class="btn-secondary" onclick="launchApp('com.plexapp.android')">Plex</button>
-            <button class="btn-secondary" onclick="launchApp('com.spotify.tv.android')">Spotify</button>
-            <button class="btn-secondary" onclick="launchApp('com.hbo.hbomax')">HBO Max</button>
+        <div id="philipsApps" style="display: none;">
+            <button class="btn-primary" style="width:100%; padding: 14px; font-size: 16px; font-weight: 700; margin-bottom: 8px; background: #b20710;" onclick="philipsSendKey('Netflix')">
+                Open Netflix
+            </button>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+                <button class="btn-secondary" onclick="launchApp('com.google.android.youtube.tv')">YouTube</button>
+                <button class="btn-secondary" onclick="launchApp('com.netflix.ninja')">Netflix</button>
+                <button class="btn-secondary" onclick="launchApp('com.amazon.amazonvideo.livingroom')">Prime Video</button>
+                <button class="btn-secondary" onclick="launchApp('com.hulu.livingroomplus')">Hulu</button>
+                <button class="btn-secondary" onclick="launchApp('com.disney.disneyplus')">Disney+</button>
+                <button class="btn-secondary" onclick="launchApp('com.aspect.webbrowser')">Browser</button>
+                <button class="btn-secondary" onclick="launchApp('com.plexapp.android')">Plex</button>
+                <button class="btn-secondary" onclick="launchApp('com.spotify.tv.android')">Spotify</button>
+                <button class="btn-secondary" onclick="launchApp('com.hbo.hbomax')">HBO Max</button>
+            </div>
         </div>
         <div class="hint" style="margin-top: 8px;">
             App IDs may vary by TV model and region. If an app doesn't launch,
@@ -1352,27 +1357,45 @@
         }
 
         if (tvBrand === 'philips') {
-            // For Philips, use Android intents. Some apps need specific launch intents.
-            let intent;
-            if (appId === 'com.netflix.ninja') {
-                // Netflix needs a specific intent to launch properly
-                intent = {
-                    action: 'android.intent.action.MAIN',
-                    component: {
-                        packageName: 'com.netflix.ninja',
-                        className: 'com.netflix.ninja.MainActivity',
-                    },
-                    extras: {}
-                };
-            } else {
-                intent = {
+            // Philips TVs have multiple ways to launch apps depending on
+            // the platform (Android TV vs Saphi) and firmware version.
+            // We try all methods — the TV ignores ones it doesn't support.
+
+            // Dedicated app keys in the Philips key API (most reliable method).
+            // These work like pressing the physical button on the remote.
+            const appKeys = {
+                'com.netflix.ninja': 'Netflix',
+                'com.google.android.youtube.tv': 'YouTube',
+                'com.amazon.amazonvideo.livingroom': 'AmazonVideo',
+                'com.disney.disneyplus': 'DisneyPlus',
+                'com.hbo.hbomax': 'HBOMax',
+                'com.spotify.tv.android': 'Spotify',
+                'com.aspect.webbrowser': 'WEB_BROWSER',
+            };
+
+            const appKey = appKeys[appId];
+            if (appKey) {
+                // Method 1: Dedicated app key (works on most Philips TVs)
+                philipsSendKey(appKey);
+                log(`Sent app key: ${appKey}`, 'info');
+            }
+
+            // Method 2: Launch via activities API with Android intent
+            philipsPost('activities/launch', {
+                intent: {
                     action: 'android.intent.action.MAIN',
                     component: { packageName: appId, className: '' },
-                };
-            }
-            philipsPost('activities/launch', { intent: intent });
-            // Also try launching via the applications endpoint as fallback
-            philipsPost('applications/launch', { id: appId });
+                }
+            });
+
+            // Method 3: Launch via applications endpoint (Saphi TVs)
+            philipsPost('applications', {
+                activity: { href: `applications/${appId}`, action: 'start' }
+            });
+
+            // Method 4: Direct application start (some API versions)
+            philipsPost(`applications/${appId}`, { action: 'start' });
+
             log(`Launching app: ${appId}`, 'success');
             return;
         }
