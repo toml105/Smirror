@@ -1,0 +1,1615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Smirror - Smart TV Remote</title>
+    <style>
+        :root {
+            --bg: #121212;
+            --surface: #1e1e1e;
+            --surface2: #2a2a2a;
+            --primary: #4fc3f7;
+            --primary-dark: #0288d1;
+            --text: #e0e0e0;
+            --text-dim: #888;
+            --danger: #ef5350;
+            --success: #66bb6a;
+            --radius: 12px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .header {
+            padding: 16px 20px;
+            text-align: center;
+            border-bottom: 1px solid var(--surface2);
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .header .subtitle {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 8px;
+            font-size: 13px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--danger);
+        }
+
+        .status-dot.connected {
+            background: var(--success);
+        }
+
+        /* Connection Panel */
+        .panel {
+            margin: 12px 16px;
+            padding: 16px;
+            background: var(--surface);
+            border-radius: var(--radius);
+        }
+
+        .panel h2 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--primary);
+        }
+
+        .input-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        input[type="text"], input[type="number"], input[type="url"] {
+            flex: 1;
+            padding: 10px 14px;
+            background: var(--surface2);
+            border: 1px solid #333;
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 16px;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+        }
+
+        button {
+            padding: 10px 18px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        button:active {
+            opacity: 0.7;
+        }
+
+        .btn-primary {
+            background: var(--primary-dark);
+            color: white;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: var(--surface2);
+            color: var(--text);
+            border: 1px solid #444;
+        }
+
+        .hint {
+            font-size: 11px;
+            color: var(--text-dim);
+            margin-top: 6px;
+            line-height: 1.4;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            margin: 0 16px;
+            gap: 4px;
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 4px;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--text-dim);
+            border: none;
+        }
+
+        .tab.active {
+            background: var(--primary-dark);
+            color: white;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Remote Control */
+        .remote-pad {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            padding: 20px;
+        }
+
+        .remote-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .remote-btn {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: var(--surface2);
+            border: 1px solid #444;
+            color: var(--text);
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .remote-btn.center {
+            background: var(--primary-dark);
+            color: white;
+            width: 72px;
+            height: 72px;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .remote-btn.wide {
+            width: 100%;
+            border-radius: 12px;
+            height: 48px;
+        }
+
+        .remote-btn.small {
+            width: 48px;
+            height: 48px;
+            font-size: 13px;
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 8px;
+            width: 100%;
+            max-width: 300px;
+        }
+
+        .btn-row button {
+            flex: 1;
+        }
+
+        .spacer { width: 64px; height: 64px; }
+
+        /* Volume/Channel */
+        .vol-ch-row {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            max-width: 300px;
+            margin-top: 16px;
+        }
+
+        .vol-ch-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .vol-ch-group .label {
+            font-size: 11px;
+            color: var(--text-dim);
+            font-weight: 600;
+        }
+
+        /* Cast Panel */
+        .cast-option {
+            padding: 14px;
+            background: var(--surface2);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .cast-option label {
+            font-size: 14px;
+            font-weight: 600;
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        .cast-option .desc {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+        }
+
+        /* Log */
+        .log {
+            margin: 12px 16px;
+            padding: 12px;
+            background: #0a0a0a;
+            border-radius: 8px;
+            max-height: 120px;
+            overflow-y: auto;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+
+        .log .entry {
+            padding: 2px 0;
+        }
+
+        .log .error { color: var(--danger); }
+        .log .success { color: var(--success); }
+        .log .info { color: var(--primary); }
+
+        /* Certificate Warning */
+        .cert-warning {
+            margin: 12px 16px;
+            padding: 14px;
+            background: #332200;
+            border: 1px solid #664400;
+            border-radius: var(--radius);
+            font-size: 13px;
+            line-height: 1.5;
+            display: none;
+        }
+
+        .cert-warning.show {
+            display: block;
+        }
+
+        .cert-warning a {
+            color: var(--primary);
+        }
+
+        .cert-warning strong {
+            color: #ffb74d;
+        }
+
+        /* Welcome Screen */
+        .welcome {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 80vh;
+            padding: 32px 24px;
+            text-align: center;
+        }
+
+        .welcome.hidden {
+            display: none;
+        }
+
+        .welcome-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+
+        .welcome h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .welcome .greeting {
+            font-size: 16px;
+            color: var(--text-dim);
+            margin-bottom: 32px;
+            line-height: 1.5;
+        }
+
+        .setup-steps {
+            width: 100%;
+            max-width: 340px;
+            text-align: left;
+        }
+
+        .setup-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 14px;
+            background: var(--surface);
+            border-radius: var(--radius);
+            margin-bottom: 8px;
+        }
+
+        .setup-step .step-num {
+            width: 28px;
+            height: 28px;
+            min-width: 28px;
+            background: var(--primary-dark);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 700;
+            color: white;
+        }
+
+        .setup-step .step-text {
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .setup-step .step-text strong {
+            color: var(--primary);
+        }
+
+        .welcome .start-btn {
+            margin-top: 24px;
+            padding: 14px 48px;
+            font-size: 16px;
+            border-radius: 24px;
+            background: var(--primary-dark);
+            color: white;
+            border: none;
+            font-weight: 700;
+        }
+
+        .welcome .skip-link {
+            margin-top: 12px;
+            font-size: 13px;
+            color: var(--text-dim);
+            background: none;
+            border: none;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+
+        .main-app {
+            display: none;
+        }
+
+        .main-app.visible {
+            display: block;
+        }
+
+        .tv-brand-btn {
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        .tv-brand-btn.active {
+            background: var(--primary-dark) !important;
+            color: white !important;
+            border-color: var(--primary) !important;
+        }
+
+        /* Philips pairing modal */
+        .pair-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .pair-modal.show {
+            display: flex;
+        }
+
+        .pair-modal-content {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 24px;
+            max-width: 340px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .pair-modal-content h3 {
+            color: var(--primary);
+            margin-bottom: 12px;
+        }
+
+        .pair-modal-content p {
+            font-size: 14px;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+            line-height: 1.5;
+        }
+
+        .pair-modal-content input {
+            width: 100%;
+            text-align: center;
+            font-size: 24px;
+            letter-spacing: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Welcome Screen -->
+<div class="welcome" id="welcomeScreen">
+    <div class="welcome-icon">&#128250;</div>
+    <h1>Hey! Welcome to Smirror</h1>
+    <div class="greeting">
+        Turn your phone into a remote for your Samsung or Philips TV.<br>
+        No apps to install — let's get you connected.
+    </div>
+
+    <div class="setup-steps">
+        <div class="setup-step">
+            <div class="step-num">1</div>
+            <div class="step-text">Make sure your <strong>phone</strong> and the <strong>TV</strong> are on the same WiFi</div>
+        </div>
+        <div class="setup-step">
+            <div class="step-num">2</div>
+            <div class="step-text">Find the TV's IP address:<br><strong>TV Settings > Network > Network Status</strong></div>
+        </div>
+        <div class="setup-step">
+            <div class="step-num">3</div>
+            <div class="step-text">Select your <strong>TV brand</strong> (Samsung or Philips) and tap <strong>Connect</strong></div>
+        </div>
+    </div>
+
+    <button class="start-btn" onclick="startApp()">Let's Go</button>
+    <button class="skip-link" onclick="startApp()">I've done this before, skip intro</button>
+</div>
+
+<!-- Main App (hidden until welcome is dismissed) -->
+<div class="main-app" id="mainApp">
+
+<div class="header">
+    <h1>Smirror</h1>
+    <div class="subtitle">Smart TV Remote & Cast</div>
+</div>
+
+<div class="status-bar">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">Disconnected</span>
+</div>
+
+<!-- Connection Panel -->
+<div class="panel" id="connectPanel">
+    <h2>Connect to TV</h2>
+    <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+        <button class="btn-secondary tv-brand-btn active" id="brandSamsung" onclick="setBrand('samsung')" style="flex:1; padding: 10px; font-weight: 700;">Samsung</button>
+        <button class="btn-secondary tv-brand-btn" id="brandPhilips" onclick="setBrand('philips')" style="flex:1; padding: 10px; font-weight: 700;">Philips</button>
+    </div>
+    <div class="input-row">
+        <input type="text" id="tvIp" placeholder="TV IP address (e.g. 192.168.1.100)"
+               inputmode="decimal" autocomplete="off">
+        <button class="btn-primary" id="connectBtn" onclick="toggleConnection()">Connect</button>
+    </div>
+    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+        <button class="btn-secondary" style="flex:1;" onclick="scanForTV()">Find My TV</button>
+        <button class="btn-secondary" style="flex:1;" onclick="toggleHelp()">Hotel TV Help</button>
+    </div>
+    <div class="hint" id="ipHint">
+        Find the TV's IP: TV Settings &gt; Network &gt; View network settings
+    </div>
+    <div id="philipsTestBtn" style="display:none; margin-top: 8px;">
+        <button class="btn-secondary" style="width:100%; background: #1a2332; border-color: #234;" onclick="philipsTestConnection()">
+            Test Connection (send volume up/down)
+        </button>
+    </div>
+
+    <!-- Scan Progress -->
+    <div id="scanProgress" style="display:none; margin-top: 10px; padding: 10px; background: var(--surface2); border-radius: 8px;">
+        <div style="font-size: 13px; margin-bottom: 6px;" id="scanStatus">Scanning...</div>
+        <div style="background: #333; border-radius: 4px; height: 6px; overflow: hidden;">
+            <div id="scanBar" style="background: var(--primary); height: 100%; width: 0%; transition: width 0.3s;"></div>
+        </div>
+        <div id="scanResults" style="margin-top: 8px; font-size: 12px;"></div>
+    </div>
+
+    <!-- Hotel Help -->
+    <div id="hotelHelp" style="display:none; margin-top: 10px;">
+        <div style="padding: 12px; background: #1a2332; border: 1px solid #234; border-radius: 8px; margin-bottom: 8px;">
+            <div style="font-size: 14px; font-weight: 600; color: var(--primary); margin-bottom: 8px;">iPhone AirPlay (Try This First!)</div>
+            <div style="font-size: 13px; line-height: 1.5; color: var(--text-dim);">
+                1. Swipe down from <strong style="color:var(--text);">top-right</strong> of your iPhone<br>
+                2. Tap <strong style="color:var(--text);">Screen Mirroring</strong> (two rectangles icon)<br>
+                3. If the Samsung TV appears, tap it<br>
+                4. That's it! No IP needed
+            </div>
+        </div>
+        <div style="padding: 12px; background: #1a2332; border: 1px solid #234; border-radius: 8px; margin-bottom: 8px;">
+            <div style="font-size: 14px; font-weight: 600; color: var(--primary); margin-bottom: 8px;">Don't Know the TV's IP?</div>
+            <div style="font-size: 13px; line-height: 1.5; color: var(--text-dim);">
+                Tap <strong style="color:var(--text);">Find My TV</strong> above — it'll scan common hotel IP ranges to find Samsung TVs on your network automatically.
+            </div>
+        </div>
+        <div style="padding: 12px; background: #1a2332; border: 1px solid #234; border-radius: 8px; margin-bottom: 8px;">
+            <div style="font-size: 14px; font-weight: 600; color: var(--primary); margin-bottom: 8px;">TV in Hospitality Mode?</div>
+            <div style="font-size: 13px; line-height: 1.5; color: var(--text-dim);">
+                Hotel TVs often lock smart features. Try these:<br><br>
+                <strong style="color:var(--text);">Ask the front desk</strong> for the TV's IP address or WiFi casting instructions — they usually know.<br><br>
+                <strong style="color:var(--text);">Check for a hotel casting app</strong> — many hotels use systems like Chromecast, Staycast, or Enseo. Look for instructions on the hotel welcome screen or on a card near the TV.<br><br>
+                <strong style="color:var(--text);">Use HDMI</strong> — if the TV has an HDMI port on the side, get a Lightning-to-HDMI adapter (Apple sells one, or try the hotel gift shop).
+            </div>
+        </div>
+    </div>
+
+    <div class="cert-warning" id="certWarning">
+        <strong>Step 1:</strong> First, tap the link below to accept the TV's certificate:<br>
+        <a href="#" id="certLink" target="_blank">Accept TV Certificate</a><br><br>
+        <strong>Step 2:</strong> Tap "Advanced" &gt; "Proceed" on the warning page.<br>
+        <strong>Step 3:</strong> Come back here and tap Connect again.
+    </div>
+    <div class="cert-warning" id="philipsCertWarning">
+        <strong>Philips TV requires accepting its certificate first:</strong><br><br>
+        <strong>Step 1:</strong> Tap this link:<br>
+        <a href="#" id="philipsCertLink" target="_blank">Accept Philips TV Certificate</a><br><br>
+        <strong>Step 2:</strong> You'll see a security warning. Tap <strong>"Advanced"</strong> then <strong>"Proceed"</strong> (or "Accept the Risk").<br>
+        <strong>Step 3:</strong> You should see a blank page or JSON text — that means it worked!<br>
+        <strong>Step 4:</strong> Come back here and tap <strong>Connect</strong> again.
+    </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+    <button class="tab active" onclick="switchTab('remote')">Remote</button>
+    <button class="tab" onclick="switchTab('cast')">Cast</button>
+    <button class="tab" onclick="switchTab('apps')">Apps</button>
+</div>
+
+<!-- Remote Tab -->
+<div class="tab-content active" id="tab-remote">
+    <div class="remote-pad">
+        <!-- Power & Source row -->
+        <div class="btn-row">
+            <button class="remote-btn small" onclick="sendKey('KEY_POWER')" style="color: var(--danger);">PWR</button>
+            <button class="remote-btn small" onclick="sendKey('KEY_SOURCE')">SRC</button>
+            <button class="remote-btn small" onclick="sendKey('KEY_HOME')">HOME</button>
+            <button class="remote-btn small" onclick="sendKey('KEY_RETURN')">BACK</button>
+        </div>
+
+        <!-- D-Pad -->
+        <div style="margin: 12px 0;">
+            <div class="remote-row">
+                <div class="spacer"></div>
+                <button class="remote-btn" onclick="sendKey('KEY_UP')">&#9650;</button>
+                <div class="spacer"></div>
+            </div>
+            <div class="remote-row">
+                <button class="remote-btn" onclick="sendKey('KEY_LEFT')">&#9664;</button>
+                <button class="remote-btn center" onclick="sendKey('KEY_ENTER')">OK</button>
+                <button class="remote-btn" onclick="sendKey('KEY_RIGHT')">&#9654;</button>
+            </div>
+            <div class="remote-row">
+                <div class="spacer"></div>
+                <button class="remote-btn" onclick="sendKey('KEY_DOWN')">&#9660;</button>
+                <div class="spacer"></div>
+            </div>
+        </div>
+
+        <!-- Volume / Channel -->
+        <div class="vol-ch-row">
+            <div class="vol-ch-group">
+                <button class="remote-btn small" onclick="sendKey('KEY_VOLUP')">+</button>
+                <span class="label">VOL</span>
+                <button class="remote-btn small" onclick="sendKey('KEY_VOLDOWN')">-</button>
+            </div>
+            <div class="vol-ch-group">
+                <button class="remote-btn small" onclick="sendKey('KEY_MUTE')">MUTE</button>
+            </div>
+            <div class="vol-ch-group">
+                <button class="remote-btn small" onclick="sendKey('KEY_CHUP')">+</button>
+                <span class="label">CH</span>
+                <button class="remote-btn small" onclick="sendKey('KEY_CHDOWN')">-</button>
+            </div>
+        </div>
+
+        <!-- Playback -->
+        <div class="btn-row" style="margin-top: 16px;">
+            <button class="remote-btn small" onclick="sendKey('KEY_REWIND')">&#9194;</button>
+            <button class="remote-btn small" onclick="sendKey('KEY_PLAY')">&#9654;&#xFE0E;</button>
+            <button class="remote-btn small" onclick="sendKey('KEY_PAUSE')">&#9208;</button>
+            <button class="remote-btn small" onclick="sendKey('KEY_FF')">&#9193;</button>
+        </div>
+
+        <!-- Number pad toggle -->
+        <button class="btn-secondary" style="margin-top: 12px; width: 100%; max-width: 300px;"
+                onclick="toggleNumpad()">Number Pad</button>
+        <div id="numpad" style="display: none; margin-top: 8px;">
+            <div class="btn-row">
+                <button class="remote-btn small" onclick="sendKey('KEY_1')">1</button>
+                <button class="remote-btn small" onclick="sendKey('KEY_2')">2</button>
+                <button class="remote-btn small" onclick="sendKey('KEY_3')">3</button>
+            </div>
+            <div class="btn-row" style="margin-top: 4px;">
+                <button class="remote-btn small" onclick="sendKey('KEY_4')">4</button>
+                <button class="remote-btn small" onclick="sendKey('KEY_5')">5</button>
+                <button class="remote-btn small" onclick="sendKey('KEY_6')">6</button>
+            </div>
+            <div class="btn-row" style="margin-top: 4px;">
+                <button class="remote-btn small" onclick="sendKey('KEY_7')">7</button>
+                <button class="remote-btn small" onclick="sendKey('KEY_8')">8</button>
+                <button class="remote-btn small" onclick="sendKey('KEY_9')">9</button>
+            </div>
+            <div class="btn-row" style="margin-top: 4px;">
+                <div style="width:48px;"></div>
+                <button class="remote-btn small" onclick="sendKey('KEY_0')">0</button>
+                <div style="width:48px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Cast Tab -->
+<div class="tab-content" id="tab-cast">
+    <div class="panel">
+        <h2>Cast to TV</h2>
+
+        <div class="cast-option">
+            <label>Open URL on TV</label>
+            <div class="desc">Open any URL in the TV's browser (YouTube, photos, streams, etc.)</div>
+            <div class="input-row">
+                <input type="url" id="castUrl" placeholder="https://youtube.com/watch?v=..." inputmode="url">
+                <button class="btn-primary" onclick="castUrl()">Cast</button>
+            </div>
+        </div>
+
+        <div class="cast-option">
+            <label>YouTube Video</label>
+            <div class="desc">Launch YouTube app with a video (paste video URL or ID)</div>
+            <div class="input-row">
+                <input type="text" id="ytUrl" placeholder="YouTube URL or video ID" inputmode="url">
+                <button class="btn-primary" onclick="castYoutube()">Play</button>
+            </div>
+        </div>
+
+        <div class="cast-option">
+            <label>Type Text on TV</label>
+            <div class="desc">Send text to the TV's active input field (search bars, etc.)</div>
+            <div class="input-row">
+                <input type="text" id="textInput" placeholder="Type text to send...">
+                <button class="btn-primary" onclick="sendTextInput()">Send</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Apps Tab -->
+<div class="tab-content" id="tab-apps">
+    <div class="panel">
+        <h2>Quick Launch</h2>
+        <!-- Samsung Apps -->
+        <div id="samsungApps" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+            <button class="btn-secondary" onclick="launchApp('111299001912')">YouTube</button>
+            <button class="btn-secondary" onclick="launchApp('3201907018807')">Netflix</button>
+            <button class="btn-secondary" onclick="launchApp('3201601007250')">Prime Video</button>
+            <button class="btn-secondary" onclick="launchApp('3201806016432')">Hulu</button>
+            <button class="btn-secondary" onclick="launchApp('3201601007670')">Disney+</button>
+            <button class="btn-secondary" onclick="launchApp('org.tizen.browser')">Browser</button>
+            <button class="btn-secondary" onclick="launchApp('3201512006785')">Plex</button>
+            <button class="btn-secondary" onclick="launchApp('3201606009684')">Spotify</button>
+            <button class="btn-secondary" onclick="launchApp('3201611010983')">HBO Max</button>
+        </div>
+        <!-- Philips Apps (Android TV packages) -->
+        <div id="philipsApps" style="display: none;">
+            <button class="btn-primary" style="width:100%; padding: 14px; font-size: 16px; font-weight: 700; margin-bottom: 8px; background: #b20710;" onclick="philipsSendKey('Netflix')">
+                Open Netflix
+            </button>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+                <button class="btn-secondary" onclick="launchApp('com.google.android.youtube.tv')">YouTube</button>
+                <button class="btn-secondary" onclick="launchApp('com.netflix.ninja')">Netflix</button>
+                <button class="btn-secondary" onclick="launchApp('com.amazon.amazonvideo.livingroom')">Prime Video</button>
+                <button class="btn-secondary" onclick="launchApp('com.hulu.livingroomplus')">Hulu</button>
+                <button class="btn-secondary" onclick="launchApp('com.disney.disneyplus')">Disney+</button>
+                <button class="btn-secondary" onclick="launchApp('com.aspect.webbrowser')">Browser</button>
+                <button class="btn-secondary" onclick="launchApp('com.plexapp.android')">Plex</button>
+                <button class="btn-secondary" onclick="launchApp('com.spotify.tv.android')">Spotify</button>
+                <button class="btn-secondary" onclick="launchApp('com.hbo.hbomax')">HBO Max</button>
+            </div>
+        </div>
+        <div class="hint" style="margin-top: 8px;">
+            App IDs may vary by TV model and region. If an app doesn't launch,
+            it may not be installed on this TV.
+        </div>
+    </div>
+</div>
+
+<!-- Log -->
+<div class="log" id="log"></div>
+
+</div><!-- end mainApp -->
+
+<!-- Philips Pairing Modal -->
+<div class="pair-modal" id="pairModal">
+    <div class="pair-modal-content">
+        <h3>Philips TV Pairing</h3>
+        <p>A PIN code should appear on your TV screen.<br>Enter it below to complete pairing.</p>
+        <input type="text" id="pairPin" placeholder="PIN" inputmode="numeric" maxlength="4" autocomplete="off">
+        <div style="display: flex; gap: 8px;">
+            <button class="btn-secondary" style="flex:1;" onclick="cancelPairing()">Cancel</button>
+            <button class="btn-primary" style="flex:1;" onclick="submitPin()">Pair</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let ws = null;
+    let connected = false;
+    let tvIp = '';
+    let pairingToken = '';
+    let tvBrand = 'samsung'; // 'samsung' or 'philips'
+    let philipsAuth = null; // { deviceId, authKey } for Philips
+
+    // Philips key mapping from Samsung KEY_* names
+    const PHILIPS_KEY_MAP = {
+        'KEY_POWER': 'Standby', 'KEY_POWEROFF': 'Standby',
+        'KEY_VOLUP': 'VolumeUp', 'KEY_VOLDOWN': 'VolumeDown', 'KEY_MUTE': 'Mute',
+        'KEY_CHUP': 'ChannelStepUp', 'KEY_CHDOWN': 'ChannelStepDown',
+        'KEY_UP': 'CursorUp', 'KEY_DOWN': 'CursorDown',
+        'KEY_LEFT': 'CursorLeft', 'KEY_RIGHT': 'CursorRight',
+        'KEY_ENTER': 'Confirm', 'KEY_RETURN': 'Back',
+        'KEY_HOME': 'Home', 'KEY_SOURCE': 'Source',
+        'KEY_MENU': 'Options', 'KEY_TOOLS': 'Options', 'KEY_INFO': 'Info',
+        'KEY_PLAY': 'Play', 'KEY_PAUSE': 'Pause', 'KEY_STOP': 'Stop',
+        'KEY_FF': 'FastForward', 'KEY_REWIND': 'Rewind',
+        'KEY_0': 'Digit0', 'KEY_1': 'Digit1', 'KEY_2': 'Digit2',
+        'KEY_3': 'Digit3', 'KEY_4': 'Digit4', 'KEY_5': 'Digit5',
+        'KEY_6': 'Digit6', 'KEY_7': 'Digit7', 'KEY_8': 'Digit8', 'KEY_9': 'Digit9',
+    };
+
+    function startApp() {
+        document.getElementById('welcomeScreen').classList.add('hidden');
+        document.getElementById('mainApp').classList.add('visible');
+        localStorage.setItem('smirror_welcomed', 'true');
+    }
+
+    function setBrand(brand) {
+        tvBrand = brand;
+        document.getElementById('brandSamsung').classList.toggle('active', brand === 'samsung');
+        document.getElementById('brandPhilips').classList.toggle('active', brand === 'philips');
+
+        // Hide all cert warnings when switching
+        document.getElementById('certWarning').className = 'cert-warning';
+        document.getElementById('philipsCertWarning').className = 'cert-warning';
+
+        // Toggle app grids
+        const sApps = document.getElementById('samsungApps');
+        const pApps = document.getElementById('philipsApps');
+        if (sApps && pApps) {
+            sApps.style.display = brand === 'samsung' ? 'grid' : 'none';
+            pApps.style.display = brand === 'philips' ? 'block' : 'none';
+        }
+
+        // Save brand preference
+        saveSettings();
+    }
+
+    // Load saved settings
+    const saved = localStorage.getItem('smirror');
+    if (saved) {
+        try {
+            const data = JSON.parse(saved);
+            if (data.ip) document.getElementById('tvIp').value = data.ip;
+            if (data.token) pairingToken = data.token;
+            if (data.brand) tvBrand = data.brand;
+            if (data.philipsAuth) philipsAuth = data.philipsAuth;
+        } catch(e) {}
+    }
+    // Apply saved brand
+    setBrand(tvBrand);
+
+    // Skip welcome for returning users
+    if (localStorage.getItem('smirror_welcomed')) {
+        startApp();
+    }
+
+    function saveSettings() {
+        localStorage.setItem('smirror', JSON.stringify({
+            ip: tvIp,
+            token: pairingToken,
+            brand: tvBrand,
+            philipsAuth: philipsAuth
+        }));
+    }
+
+    function log(msg, type = '') {
+        const el = document.getElementById('log');
+        const entry = document.createElement('div');
+        entry.className = 'entry ' + type;
+        const time = new Date().toLocaleTimeString();
+        entry.textContent = `[${time}] ${msg}`;
+        el.appendChild(entry);
+        el.scrollTop = el.scrollHeight;
+    }
+
+    function setStatus(text, isConnected) {
+        connected = isConnected;
+        document.getElementById('statusText').textContent = text;
+        document.getElementById('statusDot').className = 'status-dot' + (isConnected ? ' connected' : '');
+        document.getElementById('connectBtn').textContent = isConnected ? 'Disconnect' : 'Connect';
+        // Show test button for Philips when connected
+        const testBtn = document.getElementById('philipsTestBtn');
+        if (testBtn) {
+            testBtn.style.display = (isConnected && tvBrand === 'philips') ? 'block' : 'none';
+        }
+    }
+
+    async function philipsTestConnection() {
+        log('Testing: sending VolumeUp then VolumeDown...', 'info');
+        await philipsSendKey('VolumeUp');
+        setTimeout(async () => {
+            await philipsSendKey('VolumeDown');
+            log('Test sent! Did the TV volume change briefly?', 'info');
+        }, 800);
+    }
+
+    function b64encode(str) {
+        return btoa(unescape(encodeURIComponent(str)));
+    }
+
+    function toggleConnection() {
+        if (connected) {
+            disconnect();
+        } else {
+            connect();
+        }
+    }
+
+    // ==================== Philips TV HTTP API ====================
+
+    // IMPORTANT: This page is served over HTTPS (GitHub Pages).
+    // Browsers BLOCK HTTP requests from HTTPS pages (mixed content).
+    // So we MUST use HTTPS port 1926 to talk to the Philips TV.
+    // The TV uses a self-signed certificate, so the user must accept
+    // it first (similar to the Samsung cert flow).
+
+    let philipsPort = 1926;
+    let philipsScheme = 'https';
+    let philipsCertAccepted = false;
+
+    function philipsApiUrl(path) {
+        return `${philipsScheme}://${tvIp}:${philipsPort}/6/${path}`;
+    }
+
+    async function philipsPost(path, data) {
+        // Try direct POST with JSON (works after cert is accepted)
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 4000);
+            const resp = await fetch(philipsApiUrl(path), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+                signal: controller.signal,
+            });
+            clearTimeout(timeout);
+            return true; // Any response (even error codes) means TV received it
+        } catch(e) {
+            // Fallback: no-cors mode (TV receives request, browser can't read response)
+            try {
+                await fetch(philipsApiUrl(path), {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify(data),
+                });
+                return true;
+            } catch(e2) {
+                return false;
+            }
+        }
+    }
+
+    async function philipsSendKey(key) {
+        const ok = await philipsPost('input/key', { key: key });
+        if (!ok) {
+            log(`Failed to send key: ${key}. Did you accept the TV certificate?`, 'error');
+        }
+        return ok;
+    }
+
+    async function philipsGetSystem() {
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 4000);
+            const resp = await fetch(philipsApiUrl('system'), {
+                signal: controller.signal,
+            });
+            clearTimeout(timeout);
+            if (resp.ok) {
+                philipsCertAccepted = true;
+                return await resp.json();
+            }
+        } catch(e) {}
+        return null;
+    }
+
+    function showPhilipsCertWarning() {
+        const certLink = document.getElementById('philipsCertLink');
+        certLink.href = `https://${tvIp}:1926/6/system`;
+        document.getElementById('philipsCertWarning').className = 'cert-warning show';
+    }
+
+    function hidePhilipsCertWarning() {
+        document.getElementById('philipsCertWarning').className = 'cert-warning';
+    }
+
+    async function philipsConnect() {
+        tvIp = document.getElementById('tvIp').value.trim();
+        if (!tvIp) {
+            log('Please enter the TV IP address', 'error');
+            return;
+        }
+
+        setStatus('Connecting to Philips TV...', false);
+        log(`Connecting to Philips TV at ${tvIp}...`, 'info');
+
+        // Always use HTTPS on 1926 (HTTP blocked from HTTPS pages)
+        philipsScheme = 'https';
+        philipsPort = 1926;
+
+        // Try to reach the TV API
+        let info = await philipsGetSystem();
+        if (info) {
+            hidePhilipsCertWarning();
+            const tvName = info.name || 'Philips TV';
+            setStatus(`Connected to ${tvName}`, true);
+            log(`Connected to ${tvName} (${info.model || 'Philips'})`, 'success');
+            saveSettings();
+            return;
+        }
+
+        // Could not read system info — most likely the self-signed cert
+        // hasn't been accepted yet. Show the cert acceptance flow.
+        log('Cannot reach TV API. You need to accept the TV\'s certificate first.', 'info');
+        showPhilipsCertWarning();
+        setStatus('Accept TV certificate (see below)', false);
+    }
+
+    // ==================== Samsung TV WebSocket API ====================
+
+    function samsungConnect() {
+        tvIp = document.getElementById('tvIp').value.trim();
+        if (!tvIp) {
+            log('Please enter the TV IP address', 'error');
+            return;
+        }
+
+        const appName = b64encode('Smirror');
+        let url = `wss://${tvIp}:8002/api/v2/channels/samsung.remote.control?name=${appName}`;
+        if (pairingToken) {
+            url += `&token=${pairingToken}`;
+        }
+
+        setStatus('Connecting...', false);
+        log(`Connecting to Samsung TV at ${tvIp}...`, 'info');
+
+        // Show certificate warning
+        const certLink = document.getElementById('certLink');
+        certLink.href = `https://${tvIp}:8002/api/v2/`;
+        document.getElementById('certWarning').className = 'cert-warning show';
+
+        try {
+            ws = new WebSocket(url);
+        } catch(e) {
+            log(`Connection failed: ${e.message}`, 'error');
+            setStatus('Connection failed', false);
+            return;
+        }
+
+        ws.onopen = function() {
+            log('WebSocket opened, waiting for TV response...', 'info');
+        };
+
+        ws.onmessage = function(evt) {
+            try {
+                const data = JSON.parse(evt.data);
+                const event = data.event;
+
+                if (event === 'ms.channel.connect') {
+                    if (data.data && data.data.token) {
+                        pairingToken = data.data.token;
+                        saveSettings();
+                        log('Paired with TV! Token saved.', 'success');
+                    }
+                    setStatus(`Connected to ${tvIp}`, true);
+                    document.getElementById('certWarning').className = 'cert-warning';
+                    log('Connected to Samsung TV!', 'success');
+                    saveSettings();
+                }
+                else if (event === 'ms.channel.unauthorized') {
+                    log('TV rejected connection. Accept the prompt on the TV.', 'error');
+                    setStatus('Rejected by TV', false);
+                }
+                else if (event === 'ms.channel.timeOut') {
+                    log('Connection timed out. Try again.', 'error');
+                    setStatus('Timed out', false);
+                }
+                else {
+                    log(`TV event: ${event}`, 'info');
+                }
+            } catch(e) {
+                log(`Message: ${evt.data}`);
+            }
+        };
+
+        ws.onerror = function(evt) {
+            log('WebSocket error - did you accept the TV certificate? See instructions above.', 'error');
+            setStatus('Connection error', false);
+        };
+
+        ws.onclose = function(evt) {
+            if (connected) {
+                log('Connection closed', 'error');
+                setStatus('Disconnected', false);
+            }
+        };
+    }
+
+    // ==================== Unified connect/disconnect ====================
+
+    function connect() {
+        if (tvBrand === 'philips') {
+            philipsConnect();
+        } else {
+            samsungConnect();
+        }
+    }
+
+    function disconnect() {
+        if (ws) {
+            ws.close();
+            ws = null;
+        }
+        setStatus('Disconnected', false);
+        log('Disconnected');
+    }
+
+    function sendKey(key) {
+        if (!connected) {
+            log('Not connected to TV', 'error');
+            return;
+        }
+
+        // Haptic feedback
+        if (navigator.vibrate) {
+            navigator.vibrate(30);
+        }
+
+        if (tvBrand === 'philips') {
+            // Map Samsung KEY_* to Philips key names
+            const philipsKey = PHILIPS_KEY_MAP[key] || key;
+            philipsSendKey(philipsKey);
+            log(`Key: ${philipsKey}`);
+            return;
+        }
+
+        // Samsung WebSocket
+        if (!ws) {
+            log('Not connected to TV', 'error');
+            return;
+        }
+
+        const payload = {
+            method: 'ms.remote.control',
+            params: {
+                Cmd: 'Click',
+                DataOfCmd: key,
+                Option: 'false',
+                TypeOfRemote: 'SendRemoteKey'
+            }
+        };
+
+        ws.send(JSON.stringify(payload));
+        log(`Key: ${key}`);
+    }
+
+    function castUrl() {
+        const url = document.getElementById('castUrl').value.trim();
+        if (!url) {
+            log('Please enter a URL', 'error');
+            return;
+        }
+        if (!connected) {
+            log('Not connected to TV', 'error');
+            return;
+        }
+
+        if (tvBrand === 'philips') {
+            // Philips: launch browser via activities API (no-cors to bypass CORS)
+            philipsPost('activities/launch', {
+                intent: {
+                    action: 'android.intent.action.VIEW',
+                    component: {
+                        packageName: 'org.chromium.webview_shell',
+                        className: 'org.chromium.webview_shell.WebViewBrowserActivity',
+                    },
+                    data: url,
+                }
+            });
+            log(`Opening URL on Philips TV: ${url}`, 'success');
+            return;
+        }
+
+        // Samsung
+        const payload = {
+            method: 'ms.channel.emit',
+            params: {
+                event: 'ed.apps.launch',
+                to: 'host',
+                data: {
+                    appId: 'org.tizen.browser',
+                    action_type: 'NATIVE_LAUNCH',
+                    metaTag: url
+                }
+            }
+        };
+
+        ws.send(JSON.stringify(payload));
+        log(`Opening URL on TV: ${url}`, 'success');
+    }
+
+    function castYoutube() {
+        const input = document.getElementById('ytUrl').value.trim();
+        if (!input) {
+            log('Please enter a YouTube URL or video ID', 'error');
+            return;
+        }
+        if (!connected) {
+            log('Not connected to TV', 'error');
+            return;
+        }
+
+        // Extract video ID from various YouTube URL formats
+        let videoId = input;
+        const patterns = [
+            /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+            /^([a-zA-Z0-9_-]{11})$/
+        ];
+        for (const pattern of patterns) {
+            const match = input.match(pattern);
+            if (match) {
+                videoId = match[1];
+                break;
+            }
+        }
+
+        if (tvBrand === 'philips') {
+            // Philips: launch YouTube app with deep link (no-cors to bypass CORS)
+            philipsPost('activities/launch', {
+                intent: {
+                    action: 'android.intent.action.VIEW',
+                    component: {
+                        packageName: 'com.google.android.youtube.tv',
+                        className: 'com.google.android.apps.youtube.tv.activity.ShellActivity',
+                    },
+                    data: `https://www.youtube.com/watch?v=${videoId}`,
+                }
+            });
+            log(`Launching YouTube video: ${videoId}`, 'success');
+            return;
+        }
+
+        // Samsung
+        const payload = {
+            method: 'ms.channel.emit',
+            params: {
+                event: 'ed.apps.launch',
+                to: 'host',
+                data: {
+                    appId: '111299001912',
+                    action_type: 'DEEP_LINK',
+                    metaTag: `v=${videoId}`
+                }
+            }
+        };
+
+        ws.send(JSON.stringify(payload));
+        log(`Launching YouTube video: ${videoId}`, 'success');
+    }
+
+    function sendTextInput() {
+        const text = document.getElementById('textInput').value;
+        if (!text) return;
+        if (!connected) {
+            log('Not connected to TV', 'error');
+            return;
+        }
+
+        if (tvBrand === 'philips') {
+            log('Text input is limited on Philips TVs.', 'info');
+            return;
+        }
+
+        // Samsung
+        const payload = {
+            method: 'ms.remote.control',
+            params: {
+                Cmd: b64encode(text),
+                DataOfCmd: 'base64',
+                TypeOfRemote: 'SendInputString'
+            }
+        };
+
+        ws.send(JSON.stringify(payload));
+        log(`Sent text: ${text}`, 'success');
+        document.getElementById('textInput').value = '';
+    }
+
+    function launchApp(appId) {
+        if (!connected) {
+            log('Not connected to TV', 'error');
+            return;
+        }
+
+        if (tvBrand === 'philips') {
+            // Philips TVs have multiple ways to launch apps depending on
+            // the platform (Android TV vs Saphi) and firmware version.
+            // We try all methods — the TV ignores ones it doesn't support.
+
+            // Dedicated app keys in the Philips key API (most reliable method).
+            // These work like pressing the physical button on the remote.
+            const appKeys = {
+                'com.netflix.ninja': 'Netflix',
+                'com.google.android.youtube.tv': 'YouTube',
+                'com.amazon.amazonvideo.livingroom': 'AmazonVideo',
+                'com.disney.disneyplus': 'DisneyPlus',
+                'com.hbo.hbomax': 'HBOMax',
+                'com.spotify.tv.android': 'Spotify',
+                'com.aspect.webbrowser': 'WEB_BROWSER',
+            };
+
+            const appKey = appKeys[appId];
+            if (appKey) {
+                // Method 1: Dedicated app key (works on most Philips TVs)
+                philipsSendKey(appKey);
+                log(`Sent app key: ${appKey}`, 'info');
+            }
+
+            // Method 2: Launch via activities API with Android intent
+            philipsPost('activities/launch', {
+                intent: {
+                    action: 'android.intent.action.MAIN',
+                    component: { packageName: appId, className: '' },
+                }
+            });
+
+            // Method 3: Launch via applications endpoint (Saphi TVs)
+            philipsPost('applications', {
+                activity: { href: `applications/${appId}`, action: 'start' }
+            });
+
+            // Method 4: Direct application start (some API versions)
+            philipsPost(`applications/${appId}`, { action: 'start' });
+
+            log(`Launching app: ${appId}`, 'success');
+            return;
+        }
+
+        // Samsung
+        const payload = {
+            method: 'ms.channel.emit',
+            params: {
+                event: 'ed.apps.launch',
+                to: 'host',
+                data: {
+                    appId: appId,
+                    action_type: 'DEEP_LINK'
+                }
+            }
+        };
+
+        ws.send(JSON.stringify(payload));
+        log(`Launching app: ${appId}`, 'success');
+    }
+
+    // Philips pairing
+    function cancelPairing() {
+        document.getElementById('pairModal').classList.remove('show');
+    }
+
+    async function submitPin() {
+        const pin = document.getElementById('pairPin').value.trim();
+        if (!pin) {
+            log('Please enter the PIN', 'error');
+            return;
+        }
+
+        const ok = await philipsPost('pair/grant', {
+            auth: { auth_AppId: '1', pin: pin, auth_timestamp: '', auth_signature: '' },
+            device: { device_name: 'Smirror', device_os: 'Browser', app_id: 'app.id.smirror', app_name: 'Smirror', type: 'native', id: 'smirror_web' },
+        });
+
+        if (ok) {
+            philipsAuth = { deviceId: 'smirror_web', authKey: pin };
+            saveSettings();
+            log('Pairing sent! If the TV accepted it, you\'re paired.', 'success');
+            document.getElementById('pairModal').classList.remove('show');
+            philipsConnect();
+        } else {
+            log('Pairing request failed to reach the TV.', 'error');
+        }
+    }
+
+    function switchTab(name) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        event.target.classList.add('active');
+        document.getElementById('tab-' + name).classList.add('active');
+    }
+
+    function toggleNumpad() {
+        const pad = document.getElementById('numpad');
+        pad.style.display = pad.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function toggleHelp() {
+        const el = document.getElementById('hotelHelp');
+        el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    // Network scanner - tries to find Samsung TVs by probing common IPs
+    let scanning = false;
+
+    async function scanForTV() {
+        if (scanning) return;
+        scanning = true;
+
+        const progressEl = document.getElementById('scanProgress');
+        const statusEl = document.getElementById('scanStatus');
+        const barEl = document.getElementById('scanBar');
+        const resultsEl = document.getElementById('scanResults');
+
+        progressEl.style.display = 'block';
+        resultsEl.innerHTML = '';
+        statusEl.textContent = 'Detecting your network...';
+        barEl.style.width = '5%';
+        log('Starting TV scan...', 'info');
+
+        // Try to detect the local subnet from WebRTC
+        let subnet = null;
+        try {
+            subnet = await detectSubnet();
+        } catch(e) {}
+
+        // Build list of IPs to scan
+        let ipsToScan = [];
+
+        if (subnet) {
+            statusEl.textContent = `Found network: ${subnet}.x — Scanning...`;
+            log(`Detected subnet: ${subnet}.x`, 'info');
+            // Scan full subnet
+            for (let i = 1; i <= 254; i++) {
+                ipsToScan.push(`${subnet}.${i}`);
+            }
+        } else {
+            statusEl.textContent = 'Scanning common hotel IP ranges...';
+            log('Could not detect subnet, trying common ranges...', 'info');
+            // Common hotel/router subnets
+            const subnets = ['192.168.1', '192.168.0', '192.168.2', '10.0.0', '10.0.1', '172.16.0'];
+            for (const s of subnets) {
+                for (let i = 1; i <= 254; i++) {
+                    ipsToScan.push(`${s}.${i}`);
+                }
+            }
+        }
+
+        let found = [];
+        let checked = 0;
+        const total = ipsToScan.length;
+        const batchSize = 30; // Check 30 IPs at a time
+
+        for (let i = 0; i < ipsToScan.length; i += batchSize) {
+            const batch = ipsToScan.slice(i, i + batchSize);
+            const promises = batch.map(ip => checkTV(ip));
+            const results = await Promise.all(promises);
+
+            for (let j = 0; j < results.length; j++) {
+                if (results[j]) {
+                    found.push({ ip: batch[j], info: results[j] });
+                    const tvInfo = results[j];
+                    const tvBrand = tvInfo.brand || 'samsung';
+                    const brandLabel = tvBrand.charAt(0).toUpperCase() + tvBrand.slice(1);
+                    const btn = document.createElement('button');
+                    btn.className = 'btn-primary';
+                    btn.style.cssText = 'width:100%; margin-top:4px; text-align:left; padding:10px 14px;';
+                    btn.innerHTML = `<strong>[${brandLabel}] ${tvInfo.name || 'Smart TV'}</strong><br><span style="font-size:12px; opacity:0.8;">${batch[j]} — Tap to connect</span>`;
+                    btn.onclick = function() {
+                        document.getElementById('tvIp').value = batch[j];
+                        setBrand(tvBrand);
+                        // If Philips with detected port, set it
+                        if (tvInfo.brand === 'philips' && tvInfo.port) {
+                            philipsPort = tvInfo.port;
+                            philipsScheme = tvInfo.scheme || (tvInfo.port === 1926 ? 'https' : 'http');
+                        }
+                        connect();
+                    };
+                    resultsEl.appendChild(btn);
+                    log(`Found ${brandLabel} TV: ${tvInfo.name || 'Smart TV'} at ${batch[j]}`, 'success');
+                }
+            }
+
+            checked += batch.length;
+            barEl.style.width = `${Math.round((checked / total) * 100)}%`;
+            statusEl.textContent = `Scanning... ${checked}/${total} (found ${found.length})`;
+        }
+
+        if (found.length === 0) {
+            statusEl.textContent = 'No Smart TVs found on this network.';
+            resultsEl.innerHTML = '<div style="color: var(--text-dim); font-size: 12px; margin-top: 4px;">The TV might be on a different network, or the hotel network blocks device-to-device connections. Try the Hotel TV Help button for alternatives.</div>';
+            log('Scan complete: no TVs found', 'error');
+        } else {
+            statusEl.textContent = `Found ${found.length} TV(s)! Tap to connect:`;
+        }
+
+        barEl.style.width = '100%';
+        scanning = false;
+    }
+
+    async function checkTV(ip) {
+        // Try Samsung first, then Philips
+        const result = await checkSamsungTV(ip);
+        if (result) return result;
+        return await checkPhilipsTV(ip);
+    }
+
+    async function checkSamsungTV(ip) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 1500);
+
+        try {
+            const resp = await fetch(`http://${ip}:8001/api/v2/`, {
+                signal: controller.signal,
+                mode: 'cors'
+            });
+            clearTimeout(timeout);
+            if (resp.ok) {
+                const data = await resp.json();
+                const device = data.device || {};
+                return { name: device.name || 'Samsung TV', brand: 'samsung', ip: ip };
+            }
+        } catch(e) {
+            clearTimeout(timeout);
+        }
+        return null;
+    }
+
+    async function checkPhilipsTV(ip) {
+        // Try HTTP port 1925 first (CORS-friendly on some models)
+        const controller1 = new AbortController();
+        const timeout1 = setTimeout(() => controller1.abort(), 1500);
+        try {
+            const resp = await fetch(`http://${ip}:1925/6/system`, {
+                signal: controller1.signal,
+            });
+            clearTimeout(timeout1);
+            if (resp.ok) {
+                const data = await resp.json();
+                return { name: data.name || 'Philips TV', brand: 'philips', ip: ip, port: 1925, scheme: 'http' };
+            }
+        } catch(e) {
+            clearTimeout(timeout1);
+        }
+
+        // Try no-cors probe on 1925 — if it resolves fast, TV is there (just CORS-blocked)
+        const controller2 = new AbortController();
+        const timeout2 = setTimeout(() => controller2.abort(), 1200);
+        const startTime = Date.now();
+        try {
+            await fetch(`http://${ip}:1925/6/system`, {
+                mode: 'no-cors',
+                signal: controller2.signal,
+            });
+            clearTimeout(timeout2);
+            // Opaque response = TV is there
+            return { name: 'Philips TV', brand: 'philips', ip: ip, port: 1925, scheme: 'http' };
+        } catch(e) {
+            clearTimeout(timeout2);
+            // Fast rejection (< 400ms) often means CORS blocked but TCP connected
+            if (Date.now() - startTime < 400 && e.name !== 'AbortError') {
+                return { name: 'Philips TV', brand: 'philips', ip: ip, port: 1925, scheme: 'http' };
+            }
+        }
+
+        // Try HTTPS port 1926 with no-cors
+        const controller3 = new AbortController();
+        const timeout3 = setTimeout(() => controller3.abort(), 1200);
+        const startTime2 = Date.now();
+        try {
+            await fetch(`https://${ip}:1926/6/system`, {
+                mode: 'no-cors',
+                signal: controller3.signal,
+            });
+            clearTimeout(timeout3);
+            return { name: 'Philips TV', brand: 'philips', ip: ip, port: 1926, scheme: 'https' };
+        } catch(e) {
+            clearTimeout(timeout3);
+            if (Date.now() - startTime2 < 400 && e.name !== 'AbortError') {
+                return { name: 'Philips TV', brand: 'philips', ip: ip, port: 1926, scheme: 'https' };
+            }
+        }
+
+        return null;
+    }
+
+    async function detectSubnet() {
+        // Use WebRTC to detect local IP
+        return new Promise((resolve, reject) => {
+            const pc = new RTCPeerConnection({ iceServers: [] });
+            pc.createDataChannel('');
+            pc.createOffer().then(offer => pc.setLocalDescription(offer));
+            const timeout = setTimeout(() => { pc.close(); reject(); }, 3000);
+            pc.onicecandidate = function(e) {
+                if (!e || !e.candidate || !e.candidate.candidate) return;
+                const match = e.candidate.candidate.match(/(\d+\.\d+\.\d+)\.\d+/);
+                if (match && !match[1].startsWith('0.')) {
+                    clearTimeout(timeout);
+                    pc.close();
+                    resolve(match[1]);
+                }
+            };
+        });
+    }
+</script>
+
+</body>
+</html>
