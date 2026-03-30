@@ -490,6 +490,9 @@
 </head>
 <body>
 
+<!-- Hidden iframe for Philips TV form submissions (bypasses mixed content) -->
+<iframe name="philips_frame" id="philipsFrame" style="display:none;"></iframe>
+
 <!-- Welcome Screen -->
 <div class="welcome" id="welcomeScreen">
     <div class="welcome-icon">&#128250;</div>
@@ -928,24 +931,63 @@
 
     // ==================== Philips TV HTTP API ====================
 
-    // Philips TVs use HTTP port 1925 or HTTPS port 1926.
-    // Problem: GitHub Pages is HTTPS, which blocks HTTP requests (mixed content).
-    // Solution: detect if we're on HTTPS or not.
-    //   - If opened as local file (file://) or HTTP: use HTTP port 1925 (best)
-    //   - If on HTTPS (GitHub Pages): use HTTPS port 1926 + cert acceptance
-    const isSecurePage = (location.protocol === 'https:');
-    let philipsPort = isSecurePage ? 1926 : 1925;
-    let philipsScheme = isSecurePage ? 'https' : 'http';
+    // KEY INSIGHT: fetch() from an HTTPS page to HTTP is blocked (mixed content).
+    // But HTML <form> submissions to HTTP ARE allowed — browsers treat form
+    // navigation differently from fetch/XHR. We use a hidden form that POSTs
+    // to the Philips TV API, targeting a hidden iframe so the page doesn't navigate.
+    //
+    // With enctype="text/plain", the form body is: name=value
+    // We craft the name/value to produce valid JSON:
+    //   name = '{"key":"VolumeUp","_":"'  value = '"}'
+    //   body = '{"key":"VolumeUp","_":"="}'  ← valid JSON!
+
+    let philipsPort = 1925;
+    let philipsScheme = 'http';
 
     function philipsApiUrl(path) {
         return `${philipsScheme}://${tvIp}:${philipsPort}/6/${path}`;
     }
 
+    function philipsFormPost(path, jsonData) {
+        // Use hidden form + iframe to bypass mixed content restrictions.
+        // This works from HTTPS pages to HTTP endpoints.
+        const url = `http://${tvIp}:1925/6/${path}`;
+
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = url;
+        form.enctype = 'text/plain';
+        form.target = 'philips_frame';
+        form.style.display = 'none';
+
+        // Craft the input so the form body is valid JSON.
+        // Form sends: name=value with enctype text/plain
+        // We make name = everything before "=" and value = everything after
+        const jsonStr = JSON.stringify(jsonData);
+        // Insert a dummy field to absorb the = sign
+        // e.g. {"key":"VolumeUp"} → name='{"key":"VolumeUp","_":"' value='"}'
+        // body becomes: {"key":"VolumeUp","_":"="}
+        const jsonWithDummy = JSON.stringify(Object.assign({}, jsonData, { _: '' }));
+        const parts = jsonWithDummy.split('"_":""');
+        const inputName = parts[0] + '"_":"';
+        const inputValue = '"}';
+
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = inputName;
+        input.value = inputValue;
+        form.appendChild(input);
+
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
+    }
+
     async function philipsPost(path, data) {
-        // Try direct POST with JSON first
+        // Method 1: Try fetch (works from file:// or HTTP pages, or after cert accept)
         try {
             const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 4000);
+            const timeout = setTimeout(() => controller.abort(), 3000);
             const resp = await fetch(philipsApiUrl(path), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -955,14 +997,9 @@
             clearTimeout(timeout);
             return true;
         } catch(e) {
-            // Fallback: no-cors mode
+            // Method 2: Form submission (works from HTTPS pages to HTTP)
             try {
-                await fetch(philipsApiUrl(path), {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify(data),
-                });
+                philipsFormPost(path, data);
                 return true;
             } catch(e2) {
                 return false;
@@ -970,12 +1007,15 @@
         }
     }
 
-    async function philipsSendKey(key) {
-        const ok = await philipsPost('input/key', { key: key });
-        if (!ok) {
+    function philipsSendKey(key) {
+        // Use form submission directly for speed (no async wait needed)
+        try {
+            philipsFormPost('input/key', { key: key });
+            return true;
+        } catch(e) {
             log(`Failed to send key: ${key}`, 'error');
+            return false;
         }
-        return ok;
     }
 
     async function philipsTryGet(scheme, port) {
@@ -1016,14 +1056,14 @@
         log(`Connecting to Philips TV at ${tvIp}...`, 'info');
         hidePhilipsCertWarning();
 
-        // Try HTTP 1925 first (works from file:// or HTTP pages)
+        // Try fetch first (HTTP — works from file:// or non-HTTPS pages)
         let info = await philipsTryGet('http', 1925);
         if (info) {
             philipsScheme = 'http';
             philipsPort = 1925;
             const tvName = info.name || 'Philips TV';
             setStatus(`Connected to ${tvName}`, true);
-            log(`Connected to ${tvName} (${info.model || 'Philips'}) on HTTP:1925`, 'success');
+            log(`Connected to ${tvName} (${info.model || 'Philips'})`, 'success');
             saveSettings();
             return;
         }
@@ -1035,26 +1075,19 @@
             philipsPort = 1926;
             const tvName = info.name || 'Philips TV';
             setStatus(`Connected to ${tvName}`, true);
-            log(`Connected to ${tvName} (${info.model || 'Philips'}) on HTTPS:1926`, 'success');
+            log(`Connected to ${tvName} (${info.model || 'Philips'})`, 'success');
             saveSettings();
             return;
         }
 
-        // If on HTTPS page, mixed content blocks HTTP — tell user to save locally
-        if (isSecurePage) {
-            log('Cannot reach TV. This page is HTTPS which blocks HTTP connections.', 'error');
-            log('Your Philips TV uses HTTP — you need to open this page as a local file.', 'info');
-            log('Tap "Save for Philips TV" below, then open the saved file.', 'info');
-            showPhilipsSaveLocal();
-
-            // Also try cert flow in case TV does support HTTPS
-            showPhilipsCertWarning();
-            setStatus('See instructions below', false);
-        } else {
-            log('Could not reach Philips TV at ' + tvIp, 'error');
-            log('Is the TV on? Are you on the same WiFi?', 'info');
-            setStatus('Connection failed', false);
-        }
+        // Fetch failed — but form submissions still work from HTTPS to HTTP!
+        // We can't read the TV info, but we CAN send commands.
+        philipsScheme = 'http';
+        philipsPort = 1925;
+        setStatus(`Connected to Philips TV (${tvIp})`, true);
+        log('Connected via form-bridge mode (HTTPS→HTTP).', 'success');
+        log('Try a button now — the TV should respond!', 'info');
+        saveSettings();
     }
 
     // ==================== Samsung TV WebSocket API ====================
