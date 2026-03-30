@@ -599,6 +599,14 @@
         <strong>Step 2:</strong> Tap "Advanced" &gt; "Proceed" on the warning page.<br>
         <strong>Step 3:</strong> Come back here and tap Connect again.
     </div>
+    <div class="cert-warning" id="philipsCertWarning">
+        <strong>Philips TV requires accepting its certificate first:</strong><br><br>
+        <strong>Step 1:</strong> Tap this link:<br>
+        <a href="#" id="philipsCertLink" target="_blank">Accept Philips TV Certificate</a><br><br>
+        <strong>Step 2:</strong> You'll see a security warning. Tap <strong>"Advanced"</strong> then <strong>"Proceed"</strong> (or "Accept the Risk").<br>
+        <strong>Step 3:</strong> You should see a blank page or JSON text — that means it worked!<br>
+        <strong>Step 4:</strong> Come back here and tap <strong>Connect</strong> again.
+    </div>
 </div>
 
 <!-- Tabs -->
@@ -819,15 +827,16 @@
         document.getElementById('brandSamsung').classList.toggle('active', brand === 'samsung');
         document.getElementById('brandPhilips').classList.toggle('active', brand === 'philips');
 
-        // Update cert warning visibility
+        // Hide all cert warnings when switching
         document.getElementById('certWarning').className = 'cert-warning';
+        document.getElementById('philipsCertWarning').className = 'cert-warning';
 
         // Toggle app grids
         const sApps = document.getElementById('samsungApps');
         const pApps = document.getElementById('philipsApps');
         if (sApps && pApps) {
             sApps.style.display = brand === 'samsung' ? 'grid' : 'none';
-            pApps.style.display = brand === 'philips' ? 'grid' : 'none';
+            pApps.style.display = brand === 'philips' ? 'block' : 'none';
         }
 
         // Save brand preference
@@ -907,42 +916,43 @@
 
     // ==================== Philips TV HTTP API ====================
 
-    // Philips TVs don't send CORS headers, so browsers block reading responses.
-    // Workaround: use mode:'no-cors' — the TV still receives and acts on POST
-    // requests even though the browser gets an opaque response.
-    // For connection detection: we probe multiple ports and check if requests
-    // complete quickly (TV is there) vs time out (TV not reachable).
+    // IMPORTANT: This page is served over HTTPS (GitHub Pages).
+    // Browsers BLOCK HTTP requests from HTTPS pages (mixed content).
+    // So we MUST use HTTPS port 1926 to talk to the Philips TV.
+    // The TV uses a self-signed certificate, so the user must accept
+    // it first (similar to the Samsung cert flow).
 
-    let philipsPort = 1925; // will try 1925 (HTTP) and 1926 (HTTPS)
-    let philipsScheme = 'http';
+    let philipsPort = 1926;
+    let philipsScheme = 'https';
+    let philipsCertAccepted = false;
 
     function philipsApiUrl(path) {
         return `${philipsScheme}://${tvIp}:${philipsPort}/6/${path}`;
     }
 
     async function philipsPost(path, data) {
-        // Send a POST to the Philips API using no-cors mode.
-        // The TV receives and processes the request even though the
-        // browser can't read the response (CORS opaque response).
-        // We use text/plain Content-Type to avoid triggering a
-        // preflight OPTIONS request that the TV can't handle.
+        // Try direct POST with JSON (works after cert is accepted)
         try {
-            await fetch(philipsApiUrl(path), {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 4000);
+            const resp = await fetch(philipsApiUrl(path), {
                 method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'text/plain' },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data),
+                signal: controller.signal,
             });
-            return true;
+            clearTimeout(timeout);
+            return true; // Any response (even error codes) means TV received it
         } catch(e) {
-            // Fallback: try with CORS (works if TV supports it)
+            // Fallback: no-cors mode (TV receives request, browser can't read response)
             try {
-                const resp = await fetch(philipsApiUrl(path), {
+                await fetch(philipsApiUrl(path), {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
                     body: JSON.stringify(data),
                 });
-                return resp.ok;
+                return true;
             } catch(e2) {
                 return false;
             }
@@ -952,54 +962,35 @@
     async function philipsSendKey(key) {
         const ok = await philipsPost('input/key', { key: key });
         if (!ok) {
-            log(`Failed to send key: ${key}`, 'error');
+            log(`Failed to send key: ${key}. Did you accept the TV certificate?`, 'error');
         }
         return ok;
     }
 
     async function philipsGetSystem() {
-        // Try to read system info (works if CORS is enabled or same-origin)
         try {
             const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 3000);
+            const timeout = setTimeout(() => controller.abort(), 4000);
             const resp = await fetch(philipsApiUrl('system'), {
                 signal: controller.signal,
             });
             clearTimeout(timeout);
-            if (resp.ok) return await resp.json();
+            if (resp.ok) {
+                philipsCertAccepted = true;
+                return await resp.json();
+            }
         } catch(e) {}
         return null;
     }
 
-    async function philipsProbeReachable(scheme, port) {
-        // Check if the TV is reachable on a given port.
-        // With no-cors, an opaque response means the host IS there.
-        // A network error/timeout means it's not.
-        const url = `${scheme}://${tvIp}:${port}/6/system`;
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 2500);
-        const startTime = Date.now();
+    function showPhilipsCertWarning() {
+        const certLink = document.getElementById('philipsCertLink');
+        certLink.href = `https://${tvIp}:1926/6/system`;
+        document.getElementById('philipsCertWarning').className = 'cert-warning show';
+    }
 
-        try {
-            const resp = await fetch(url, {
-                mode: 'no-cors',
-                signal: controller.signal,
-            });
-            clearTimeout(timeout);
-            // Opaque response (type === 'opaque') means the TV responded
-            // but CORS blocked reading it — TV IS reachable
-            return { reachable: true, time: Date.now() - startTime };
-        } catch(e) {
-            clearTimeout(timeout);
-            const elapsed = Date.now() - startTime;
-            // Fast rejection (< 500ms) with TypeError usually means
-            // CORS blocked it but the TCP connection was made — TV is there
-            // but on HTTPS with cert issues. Slow timeout means unreachable.
-            if (elapsed < 500 && e.name !== 'AbortError') {
-                return { reachable: true, time: elapsed, certIssue: true };
-            }
-            return { reachable: false, time: elapsed };
-        }
+    function hidePhilipsCertWarning() {
+        document.getElementById('philipsCertWarning').className = 'cert-warning';
     }
 
     async function philipsConnect() {
@@ -1012,72 +1003,26 @@
         setStatus('Connecting to Philips TV...', false);
         log(`Connecting to Philips TV at ${tvIp}...`, 'info');
 
-        // Try reading system info directly first (works if no CORS issues)
-        philipsScheme = 'http';
-        philipsPort = 1925;
-        let info = await philipsGetSystem();
-        if (info) {
-            const tvName = info.name || 'Philips TV';
-            setStatus(`Connected to ${tvName}`, true);
-            log(`Connected to ${tvName} (${info.model || 'Philips'}) on port 1925`, 'success');
-            saveSettings();
-            return;
-        }
-
-        // Try HTTPS on 1926
+        // Always use HTTPS on 1926 (HTTP blocked from HTTPS pages)
         philipsScheme = 'https';
         philipsPort = 1926;
-        info = await philipsGetSystem();
+
+        // Try to reach the TV API
+        let info = await philipsGetSystem();
         if (info) {
+            hidePhilipsCertWarning();
             const tvName = info.name || 'Philips TV';
             setStatus(`Connected to ${tvName}`, true);
-            log(`Connected to ${tvName} (${info.model || 'Philips'}) on port 1926`, 'success');
+            log(`Connected to ${tvName} (${info.model || 'Philips'})`, 'success');
             saveSettings();
             return;
         }
 
-        // CORS is likely blocking reads — probe if TV is reachable anyway
-        log('CORS blocking direct reads. Probing TV reachability...', 'info');
-
-        const probes = await Promise.all([
-            philipsProbeReachable('http', 1925),
-            philipsProbeReachable('https', 1926),
-        ]);
-
-        const httpProbe = probes[0];
-        const httpsProbe = probes[1];
-
-        log(`Port 1925 (HTTP): ${httpProbe.reachable ? 'reachable' : 'no response'} (${httpProbe.time}ms)`, httpProbe.reachable ? 'info' : 'error');
-        log(`Port 1926 (HTTPS): ${httpsProbe.reachable ? 'reachable' : 'no response'} (${httpsProbe.time}ms)`, httpsProbe.reachable ? 'info' : 'error');
-
-        if (httpProbe.reachable) {
-            philipsScheme = 'http';
-            philipsPort = 1925;
-            setStatus(`Connected to Philips TV (${tvIp})`, true);
-            log('Connected! TV found on port 1925. CORS prevents reading info but commands will work.', 'success');
-            log('Try pressing a button — if the TV responds, you\'re all set!', 'info');
-            saveSettings();
-            return;
-        }
-
-        if (httpsProbe.reachable) {
-            philipsScheme = 'https';
-            philipsPort = 1926;
-            setStatus(`Connected to Philips TV (${tvIp})`, true);
-            log('Connected! TV found on port 1926. Commands sent via HTTPS.', 'success');
-            log('Try pressing a button — if the TV responds, you\'re all set!', 'info');
-            saveSettings();
-            return;
-        }
-
-        // Nothing worked
-        log('Could not reach a Philips TV at ' + tvIp, 'error');
-        log('Troubleshooting:', 'info');
-        log('  1. Is the TV powered ON (not just standby)?', 'info');
-        log('  2. Are you on the same WiFi as the TV?', 'info');
-        log('  3. Try the TV\'s IP from: TV Settings > Network > View network settings', 'info');
-        log('  4. Some TVs need the JointSpace API enabled in settings', 'info');
-        setStatus('Connection failed', false);
+        // Could not read system info — most likely the self-signed cert
+        // hasn't been accepted yet. Show the cert acceptance flow.
+        log('Cannot reach TV API. You need to accept the TV\'s certificate first.', 'info');
+        showPhilipsCertWarning();
+        setStatus('Accept TV certificate (see below)', false);
     }
 
     // ==================== Samsung TV WebSocket API ====================
