@@ -600,12 +600,24 @@
         <strong>Step 3:</strong> Come back here and tap Connect again.
     </div>
     <div class="cert-warning" id="philipsCertWarning">
-        <strong>Philips TV requires accepting its certificate first:</strong><br><br>
+        <strong>If your TV supports HTTPS (port 1926):</strong><br><br>
         <strong>Step 1:</strong> Tap this link:<br>
         <a href="#" id="philipsCertLink" target="_blank">Accept Philips TV Certificate</a><br><br>
-        <strong>Step 2:</strong> You'll see a security warning. Tap <strong>"Advanced"</strong> then <strong>"Proceed"</strong> (or "Accept the Risk").<br>
-        <strong>Step 3:</strong> You should see a blank page or JSON text — that means it worked!<br>
-        <strong>Step 4:</strong> Come back here and tap <strong>Connect</strong> again.
+        <strong>Step 2:</strong> Tap <strong>"Advanced"</strong> then <strong>"Proceed"</strong>.<br>
+        <strong>Step 3:</strong> Come back here and tap <strong>Connect</strong> again.
+    </div>
+    <div id="philipsSaveLocal" style="display:none; margin-top: 10px; padding: 14px; background: #1a2332; border: 1px solid #234; border-radius: 12px;">
+        <div style="font-size: 14px; font-weight: 600; color: var(--primary); margin-bottom: 8px;">Philips TV needs a local file</div>
+        <div style="font-size: 13px; line-height: 1.6; color: var(--text-dim); margin-bottom: 12px;">
+            This page runs on HTTPS, but your Philips TV only accepts HTTP connections. Browsers block that mix.<br><br>
+            <strong style="color:var(--text);">Fix:</strong> Save this page to your phone and open it from there — it'll work perfectly.
+        </div>
+        <button class="btn-primary" style="width:100%; padding: 14px; font-size: 16px;" onclick="savePageLocally()">
+            Save for Philips TV
+        </button>
+        <div style="font-size: 12px; color: var(--text-dim); margin-top: 8px; line-height: 1.4;">
+            This downloads the app as an HTML file. Open it from your Downloads and it'll connect to the TV directly.
+        </div>
     </div>
 </div>
 
@@ -916,22 +928,21 @@
 
     // ==================== Philips TV HTTP API ====================
 
-    // IMPORTANT: This page is served over HTTPS (GitHub Pages).
-    // Browsers BLOCK HTTP requests from HTTPS pages (mixed content).
-    // So we MUST use HTTPS port 1926 to talk to the Philips TV.
-    // The TV uses a self-signed certificate, so the user must accept
-    // it first (similar to the Samsung cert flow).
-
-    let philipsPort = 1926;
-    let philipsScheme = 'https';
-    let philipsCertAccepted = false;
+    // Philips TVs use HTTP port 1925 or HTTPS port 1926.
+    // Problem: GitHub Pages is HTTPS, which blocks HTTP requests (mixed content).
+    // Solution: detect if we're on HTTPS or not.
+    //   - If opened as local file (file://) or HTTP: use HTTP port 1925 (best)
+    //   - If on HTTPS (GitHub Pages): use HTTPS port 1926 + cert acceptance
+    const isSecurePage = (location.protocol === 'https:');
+    let philipsPort = isSecurePage ? 1926 : 1925;
+    let philipsScheme = isSecurePage ? 'https' : 'http';
 
     function philipsApiUrl(path) {
         return `${philipsScheme}://${tvIp}:${philipsPort}/6/${path}`;
     }
 
     async function philipsPost(path, data) {
-        // Try direct POST with JSON (works after cert is accepted)
+        // Try direct POST with JSON first
         try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 4000);
@@ -942,9 +953,9 @@
                 signal: controller.signal,
             });
             clearTimeout(timeout);
-            return true; // Any response (even error codes) means TV received it
+            return true;
         } catch(e) {
-            // Fallback: no-cors mode (TV receives request, browser can't read response)
+            // Fallback: no-cors mode
             try {
                 await fetch(philipsApiUrl(path), {
                     method: 'POST',
@@ -962,23 +973,20 @@
     async function philipsSendKey(key) {
         const ok = await philipsPost('input/key', { key: key });
         if (!ok) {
-            log(`Failed to send key: ${key}. Did you accept the TV certificate?`, 'error');
+            log(`Failed to send key: ${key}`, 'error');
         }
         return ok;
     }
 
-    async function philipsGetSystem() {
+    async function philipsTryGet(scheme, port) {
         try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 4000);
-            const resp = await fetch(philipsApiUrl('system'), {
+            const resp = await fetch(`${scheme}://${tvIp}:${port}/6/system`, {
                 signal: controller.signal,
             });
             clearTimeout(timeout);
-            if (resp.ok) {
-                philipsCertAccepted = true;
-                return await resp.json();
-            }
+            if (resp.ok) return await resp.json();
         } catch(e) {}
         return null;
     }
@@ -993,6 +1001,10 @@
         document.getElementById('philipsCertWarning').className = 'cert-warning';
     }
 
+    function showPhilipsSaveLocal() {
+        document.getElementById('philipsSaveLocal').style.display = 'block';
+    }
+
     async function philipsConnect() {
         tvIp = document.getElementById('tvIp').value.trim();
         if (!tvIp) {
@@ -1002,27 +1014,47 @@
 
         setStatus('Connecting to Philips TV...', false);
         log(`Connecting to Philips TV at ${tvIp}...`, 'info');
+        hidePhilipsCertWarning();
 
-        // Always use HTTPS on 1926 (HTTP blocked from HTTPS pages)
-        philipsScheme = 'https';
-        philipsPort = 1926;
-
-        // Try to reach the TV API
-        let info = await philipsGetSystem();
+        // Try HTTP 1925 first (works from file:// or HTTP pages)
+        let info = await philipsTryGet('http', 1925);
         if (info) {
-            hidePhilipsCertWarning();
+            philipsScheme = 'http';
+            philipsPort = 1925;
             const tvName = info.name || 'Philips TV';
             setStatus(`Connected to ${tvName}`, true);
-            log(`Connected to ${tvName} (${info.model || 'Philips'})`, 'success');
+            log(`Connected to ${tvName} (${info.model || 'Philips'}) on HTTP:1925`, 'success');
             saveSettings();
             return;
         }
 
-        // Could not read system info — most likely the self-signed cert
-        // hasn't been accepted yet. Show the cert acceptance flow.
-        log('Cannot reach TV API. You need to accept the TV\'s certificate first.', 'info');
-        showPhilipsCertWarning();
-        setStatus('Accept TV certificate (see below)', false);
+        // Try HTTPS 1926
+        info = await philipsTryGet('https', 1926);
+        if (info) {
+            philipsScheme = 'https';
+            philipsPort = 1926;
+            const tvName = info.name || 'Philips TV';
+            setStatus(`Connected to ${tvName}`, true);
+            log(`Connected to ${tvName} (${info.model || 'Philips'}) on HTTPS:1926`, 'success');
+            saveSettings();
+            return;
+        }
+
+        // If on HTTPS page, mixed content blocks HTTP — tell user to save locally
+        if (isSecurePage) {
+            log('Cannot reach TV. This page is HTTPS which blocks HTTP connections.', 'error');
+            log('Your Philips TV uses HTTP — you need to open this page as a local file.', 'info');
+            log('Tap "Save for Philips TV" below, then open the saved file.', 'info');
+            showPhilipsSaveLocal();
+
+            // Also try cert flow in case TV does support HTTPS
+            showPhilipsCertWarning();
+            setStatus('See instructions below', false);
+        } else {
+            log('Could not reach Philips TV at ' + tvIp, 'error');
+            log('Is the TV on? Are you on the same WiFi?', 'info');
+            setStatus('Connection failed', false);
+        }
     }
 
     // ==================== Samsung TV WebSocket API ====================
@@ -1608,6 +1640,26 @@
                 }
             };
         });
+    }
+
+    function savePageLocally() {
+        // Download the current page as an HTML file.
+        // When opened from Downloads (file:// protocol), HTTP requests work.
+        try {
+            const html = document.documentElement.outerHTML;
+            const blob = new Blob([html], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'smirror-tv-remote.html';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            log('File saved! Open it from your Downloads folder.', 'success');
+        } catch(e) {
+            log('Could not save automatically. Try: long-press the page > Save to Files', 'error');
+        }
     }
 </script>
 
